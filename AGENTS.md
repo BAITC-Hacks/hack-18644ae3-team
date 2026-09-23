@@ -1,14 +1,17 @@
-# Codex instructions
+# AGENTS.md
 
-This folder is the entire project workspace.
+## Project
+Career Quest hackathon project.
 
-Rules:
-- Work only inside this directory.
-- Do not read, inspect, search, or modify files outside this directory.
-- Do not access C:\Users\Roman or parent directories unless I explicitly ask.
-- Never overwrite existing files unnecessarily.
-- Before deleting files or making large destructive changes, ask me.
-- Do not modify AGENTS.md unless I explicitly request it.
-- Keep changes focused on the task I give you.
-- Run relevant tests after changes.
-- Explain important architectural changes before making them.
+## Rules
+- Work only inside this repository.
+- Do not modify files outside the repository.
+- Backend is written in Go.
+- Inspect existing code before making architectural changes.
+- Do not rewrite working code unnecessarily.
+- Keep the implementation simple enough for a hackathon.
+- Ask for approval before major architectural changes.
+- Run tests/build after meaningful backend changes.
+
+## Product context
+Read docs/PROJECT_CONTEXT.md before implementing product features.
