@@ -46,11 +46,19 @@ type RegistrationInput struct {
 	EmployeeID string `json:"employee_id,omitempty"`
 }
 
+type NewEmployeeApproval struct {
+	Role       string `json:"role"`
+	Grade      string `json:"grade"`
+	Department string `json:"department,omitempty"`
+	Team       string `json:"team,omitempty"`
+}
+
 type AccountRepository interface {
 	FindAccountByEmail(email string) (User, string, error)
 	CreatePendingAccount(input RegistrationInput, passwordHash string) (User, error)
 	ListRegistrations(status string) ([]User, error)
 	UpdateRegistration(userID, status, employeeID string) (User, error)
+	ApproveWithNewEmployee(userID string, input NewEmployeeApproval) (User, error)
 }
 
 type session struct {
@@ -151,6 +159,20 @@ func (s *Service) DecideRegistration(userID, status, employeeID string) (User, e
 		return User{}, errors.New("status must be ACTIVE or REJECTED")
 	}
 	return s.accounts.UpdateRegistration(userID, status, strings.TrimSpace(employeeID))
+}
+
+func (s *Service) ApproveNewRegistration(userID string, input NewEmployeeApproval) (User, error) {
+	if s.accounts == nil {
+		return User{}, errors.New("registration management is unavailable")
+	}
+	input.Role = strings.TrimSpace(input.Role)
+	input.Grade = strings.TrimSpace(input.Grade)
+	input.Department = strings.TrimSpace(input.Department)
+	input.Team = strings.TrimSpace(input.Team)
+	if input.Role == "" || input.Grade == "" {
+		return User{}, errors.New("job role and grade are required for a new employee")
+	}
+	return s.accounts.ApproveWithNewEmployee(userID, input)
 }
 
 func (s *Service) StartSession(w http.ResponseWriter, r *http.Request, user User) error {

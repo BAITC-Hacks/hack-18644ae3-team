@@ -41,12 +41,13 @@ type Item struct {
 }
 
 type Result struct {
-	EmployeeID      string `json:"employee_id"`
-	Basis           string `json:"basis"`
-	TargetRole      string `json:"target_role"`
-	TargetGrade     string `json:"target_grade"`
-	AsOfDate        string `json:"as_of_date"`
-	Recommendations []Item `json:"recommendations"`
+	EmployeeID      string        `json:"employee_id"`
+	Basis           string        `json:"basis"`
+	TargetRole      string        `json:"target_role"`
+	TargetGrade     string        `json:"target_grade"`
+	AsOfDate        string        `json:"as_of_date"`
+	Recommendations []Item        `json:"recommendations"`
+	LearningPlan    *LearningPlan `json:"learning_plan,omitempty"`
 }
 
 type Candidate struct {
@@ -75,7 +76,7 @@ func (s *Service) CandidatesForEvent(eventID string) ([]Candidate, error) {
 	}
 	candidates := make([]Candidate, 0)
 	for _, employee := range s.store.Employees() {
-		result, err := s.ForEmployee(employee.ID)
+		result, err := s.forEmployee(employee.ID, false)
 		if err != nil {
 			return nil, err
 		}
@@ -106,6 +107,10 @@ func (s *Service) CandidatesForEvent(eventID string) ([]Candidate, error) {
 }
 
 func (s *Service) ForEmployee(employeeID string) (Result, error) {
+	return s.forEmployee(employeeID, true)
+}
+
+func (s *Service) forEmployee(employeeID string, includePlan bool) (Result, error) {
 	employee, ok := s.store.Employee(employeeID)
 	if !ok {
 		return Result{}, fmt.Errorf("employee %q not found", employeeID)
@@ -144,6 +149,7 @@ func (s *Service) ForEmployee(employeeID string) (Result, error) {
 	}
 
 	items := make([]Item, 0)
+	planEvents := make([]domain.Event, 0)
 	for _, event := range s.store.Events() {
 		if event.Mandatory || len(event.DevelopsSkills) == 0 {
 			continue
@@ -152,15 +158,19 @@ func (s *Service) ForEmployee(employeeID string) (Result, error) {
 			continue
 		}
 		previous := latest[event.ID]
-		if previous.Status == "in_progress" {
+		if previous.Status == "in_progress" || previous.Status == "planned" || previous.Status == "enrolled" {
 			continue
 		}
 		alignment, alignmentValue, eligible := alignment(employee, event)
-		if !eligible || !meetsPrerequisites(assessment.EffectiveSkills, event.Prerequisites) {
+		if !eligible {
 			continue
 		}
 		upcoming, available := availability(event, s.store.Meta().AsOfDate)
 		if !available {
+			continue
+		}
+		planEvents = append(planEvents, event)
+		if !meetsPrerequisites(assessment.EffectiveSkills, event.Prerequisites) {
 			continue
 		}
 
@@ -208,7 +218,9 @@ func (s *Service) ForEmployee(employeeID string) (Result, error) {
 		if totalWeightedGap > 0 {
 			coverage = usefulWeighted / totalWeightedGap
 		}
-		score := 60*relevance + 25*coverage + 15*alignmentValue
+		// Prioritize how much of the employee's weighted skill gap is closed.
+		// Relevance alone favors narrow courses even when they offer little progress.
+		score := 70*coverage + 20*relevance + 10*alignmentValue
 		previousStatus := ""
 		if isUnsuccessful(previous.Status) {
 			previousStatus = previous.Status
@@ -255,14 +267,18 @@ func (s *Service) ForEmployee(employeeID string) (Result, error) {
 		return items[i].EventID < items[j].EventID
 	})
 
-	return Result{
+	result := Result{
 		EmployeeID:      employee.ID,
 		Basis:           assessment.Basis,
 		TargetRole:      assessment.TargetRole,
 		TargetGrade:     assessment.TargetGrade,
 		AsOfDate:        s.store.Meta().AsOfDate,
 		Recommendations: items,
-	}, nil
+	}
+	if includePlan {
+		result.LearningPlan = s.learningPlan(assessment, profile, planEvents)
+	}
+	return result, nil
 }
 
 func alignment(employee domain.Employee, event domain.Event) (string, float64, bool) {
@@ -306,16 +322,19 @@ func availability(event domain.Event, asOfDate string) ([]string, bool) {
 }
 
 func explain(item Item, assessment domain.Assessment) string {
-	names := make([]string, 0, len(item.SkillsCovered))
-	critical := false
+	changes := make([]string, 0, len(item.SkillsCovered))
 	for _, impact := range item.SkillsCovered {
-		names = append(names, impact.SkillName)
-		critical = critical || impact.Critical
+		label := ""
+		if impact.Critical {
+			label = ", critical"
+		}
+		changes = append(changes, fmt.Sprintf("%s from %d to %d (required: %d%s)", impact.SkillName, impact.BeforeLevel, impact.ProjectedLevel, impact.RequiredLevel, label))
 	}
-	message := fmt.Sprintf("This activity improves %s for the %s %s target.", strings.Join(names, ", "), assessment.TargetRole, assessment.TargetGrade)
-	if critical {
-		message += " It addresses at least one critical requirement."
+	basis := "current role"
+	if assessment.Basis == "career_goal" {
+		basis = "career goal"
 	}
+	message := fmt.Sprintf("For your %s %s %s, this activity is projected to improve %s.", assessment.TargetRole, assessment.TargetGrade, basis, strings.Join(changes, "; "))
 	if item.ReadinessImpact != nil {
 		message += fmt.Sprintf(" Projected career readiness increases by %.1f percentage points.", *item.ReadinessImpact)
 	}
@@ -326,7 +345,7 @@ func explain(item Item, assessment domain.Assessment) string {
 }
 
 func isUnsuccessful(status string) bool {
-	return status == "dropped" || status == "no_show" || status == "declined"
+	return status == "dropped" || status == "no_show" || status == "declined" || status == "failed"
 }
 
 func skillWeight(critical bool) float64 {

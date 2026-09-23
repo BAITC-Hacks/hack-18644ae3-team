@@ -467,7 +467,7 @@ func insertEventRelations(tx *sql.Tx, event domain.Event) error {
 }
 
 func (s *Store) ActivitiesForEmployee(id string) []domain.Activity {
-	rows, err := s.db.Query(`SELECT COALESCE(enrollment_id,0),id,employee_id,event_id,activity_date::text,COALESCE(due_date::text,''),status,completion_pct,score,feedback_rating,assigned_by FROM activity_history WHERE employee_id=$1 ORDER BY activity_date,id`, id)
+	rows, err := s.db.Query(`SELECT COALESCE(enrollment_id,0),id,employee_id,event_id,activity_date::text,COALESCE(due_date::text,''),status,completion_pct,score,feedback_rating,assigned_by,COALESCE((SELECT skill_rewards_applied FROM assessments WHERE assessments.enrollment_id=activity_history.enrollment_id),FALSE) FROM activity_history WHERE employee_id=$1 ORDER BY activity_date,id`, id)
 	if err != nil {
 		return []domain.Activity{}
 	}
@@ -476,7 +476,7 @@ func (s *Store) ActivitiesForEmployee(id string) []domain.Activity {
 	for rows.Next() {
 		var activity domain.Activity
 		var score, feedback sql.NullInt64
-		if rows.Scan(&activity.EnrollmentID, &activity.RecordID, &activity.EmployeeID, &activity.EventID, &activity.Date, &activity.DueDate, &activity.Status, &activity.CompletionPct, &score, &feedback, &activity.AssignedBy) == nil {
+		if rows.Scan(&activity.EnrollmentID, &activity.RecordID, &activity.EmployeeID, &activity.EventID, &activity.Date, &activity.DueDate, &activity.Status, &activity.CompletionPct, &score, &feedback, &activity.AssignedBy, &activity.SkillRewardsApplied) == nil {
 			if score.Valid {
 				value := int(score.Int64)
 				activity.Score = &value
@@ -492,29 +492,65 @@ func (s *Store) ActivitiesForEmployee(id string) []domain.Activity {
 }
 
 func (s *Store) CreateEmployee(input repository.EmployeeCreate) (domain.Employee, error) {
-	if input.ID == "" {
-		input.ID = randomID("E_")
+	tx, err := s.db.Begin()
+	if err != nil {
+		return domain.Employee{}, err
 	}
+	defer tx.Rollback()
+	id, err := insertEmployee(tx, input)
+	if err != nil {
+		return domain.Employee{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Employee{}, err
+	}
+	employee, ok := s.Employee(id)
+	if !ok {
+		return domain.Employee{}, errors.New("created employee could not be loaded")
+	}
+	return employee, nil
+}
+
+func insertEmployee(tx *sql.Tx, input repository.EmployeeCreate) (string, error) {
+	input.FullName = strings.TrimSpace(input.FullName)
+	input.Role = strings.TrimSpace(input.Role)
+	input.Grade = strings.TrimSpace(input.Grade)
 	if input.FullName == "" || input.Role == "" || input.Grade == "" {
-		return domain.Employee{}, errors.New("full_name, role and grade are required")
+		return "", errors.New("full_name, role and grade are required")
+	}
+	if input.ID == "" {
+		var number int64
+		if err := tx.QueryRow(`SELECT nextval('employee_id_seq')`).Scan(&number); err != nil {
+			return "", err
+		}
+		input.ID = fmt.Sprintf("E%04d", number)
 	}
 	var hire any
 	if input.HireDate != "" {
 		hire = input.HireDate
 	}
-	result, err := s.db.Exec(`INSERT INTO employees(id,full_name,email,phone,department,team,manager_id,location,job_role_id,grade_id,hire_date,work_format,preferred_language)
+	result, err := tx.Exec(`INSERT INTO employees(id,full_name,email,phone,department,team,manager_id,location,job_role_id,grade_id,hire_date,work_format,preferred_language)
 		SELECT $1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,jr.id,g.id,$9,$10,$11 FROM job_roles jr CROSS JOIN grades g WHERE jr.name=$12 AND g.name=$13`, input.ID, input.FullName, input.Email, input.Phone, input.Department, input.Team, input.ManagerID, input.Location, hire, input.WorkFormat, input.PreferredLanguage, input.Role, input.Grade)
 	if err != nil {
-		return domain.Employee{}, err
+		return "", employeeWriteError(err)
 	}
 	if count, _ := result.RowsAffected(); count == 0 {
-		return domain.Employee{}, errors.New("unknown role or grade")
+		return "", errors.New("unknown role or grade")
 	}
-	employee, ok := s.Employee(input.ID)
-	if !ok {
-		return domain.Employee{}, errors.New("created employee could not be loaded")
+	return input.ID, nil
+}
+
+func employeeWriteError(err error) error {
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) {
+		switch databaseError.ConstraintName {
+		case "employees_email_unique":
+			return errors.New("an employee with this email already exists; link the existing employee instead")
+		case "employees_pkey":
+			return errors.New("employee ID already exists")
+		}
 	}
-	return employee, nil
+	return err
 }
 
 func (s *Store) FindAccountByEmail(email string) (auth.User, string, error) {
@@ -590,6 +626,39 @@ func (s *Store) UpdateRegistration(userID, status, employeeID string) (auth.User
 	}
 	var email string
 	if err := s.db.QueryRow(`SELECT email FROM users WHERE id=$1`, userID).Scan(&email); err != nil {
+		return auth.User{}, err
+	}
+	user, _, err := s.FindAccountByEmail(email)
+	return user, err
+}
+
+func (s *Store) ApproveWithNewEmployee(userID string, input auth.NewEmployeeApproval) (auth.User, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return auth.User{}, err
+	}
+	defer tx.Rollback()
+	var name, email, status string
+	if err := tx.QueryRow(`SELECT name,email,status FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&name, &email, &status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return auth.User{}, errors.New("pending registration not found")
+		}
+		return auth.User{}, err
+	}
+	if status != "PENDING" {
+		return auth.User{}, errors.New("pending registration not found")
+	}
+	id, err := insertEmployee(tx, repository.EmployeeCreate{
+		FullName: name, Email: email, Department: input.Department, Team: input.Team,
+		Role: input.Role, Grade: input.Grade,
+	})
+	if err != nil {
+		return auth.User{}, err
+	}
+	if _, err := tx.Exec(`UPDATE users SET status='ACTIVE',employee_id=$2,updated_at=NOW() WHERE id=$1`, userID, id); err != nil {
+		return auth.User{}, accountWriteError(err)
+	}
+	if err := tx.Commit(); err != nil {
 		return auth.User{}, err
 	}
 	user, _, err := s.FindAccountByEmail(email)
@@ -678,7 +747,7 @@ func (s *Store) AssessEnrollment(enrollmentID int64, assessorUserID string, inpu
 		}
 		rows.Close()
 		for _, e := range effects {
-			if _, err := tx.Exec(`INSERT INTO employee_skills(employee_id,skill_id,level) VALUES($1,$2,LEAST($3::smallint,$4::smallint)) ON CONFLICT(employee_id,skill_id) DO UPDATE SET level=LEAST($4::smallint,(employee_skills.level+$3::smallint)::smallint),updated_at=NOW()`, employeeID, e.id, e.gain, e.max); err != nil {
+			if _, err := tx.Exec(`INSERT INTO employee_skills(employee_id,skill_id,level) VALUES($1,$2,LEAST($3::smallint,$4::smallint)) ON CONFLICT(employee_id,skill_id) DO UPDATE SET level=GREATEST(employee_skills.level,LEAST($4::smallint,(employee_skills.level+$3::smallint)::smallint)),updated_at=NOW()`, employeeID, e.id, e.gain, e.max); err != nil {
 				return repository.AssessmentResult{}, err
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"careerquest/internal/dataset"
+	"careerquest/internal/domain"
 )
 
 func loadStore(t *testing.T) *dataset.Store {
@@ -14,6 +15,24 @@ func loadStore(t *testing.T) *dataset.Store {
 		t.Fatalf("dataset.Load() error = %v", err)
 	}
 	return store
+}
+
+func TestProjectEventPreservesSkillsAboveCourseCap(t *testing.T) {
+	levels := map[string]int{"advanced": 5, "learning": 1, "capped": 2}
+	event := domain.Event{DevelopsSkills: []domain.SkillEffect{
+		{SkillID: "advanced", Gain: 1, MaxLevel: 3},
+		{SkillID: "learning", Gain: 1, MaxLevel: 3},
+		{SkillID: "capped", Gain: 2, MaxLevel: 3},
+	}}
+	projected := ProjectEvent(levels, event)
+	for skill, want := range map[string]int{"advanced": 5, "learning": 2, "capped": 3} {
+		if projected[skill] != want {
+			t.Errorf("projected %s = %d, want %d", skill, projected[skill], want)
+		}
+	}
+	if levels["learning"] != 1 || levels["capped"] != 2 {
+		t.Fatal("projection changed the employee's assessed skills")
+	}
 }
 
 func TestEffectiveSkillsIncludePostReviewCompletions(t *testing.T) {

@@ -56,6 +56,42 @@ test("pending requests render without loading an employee profile", async () => 
   assert.match(page.element("#registration-table").innerHTML, /E7777/);
 });
 
+test("HR can approve a new member without entering an employee ID", async () => {
+  let submitted;
+  const page = workspace(async (path, options) => {
+    if (path === "/registrations/U1/approve") {
+      submitted = JSON.parse(options.body);
+      return { user: { employee_id: "E0201" } };
+    }
+    if (path === "/employees") return { employees: [] };
+    if (path === "/registrations") return { registrations: [] };
+    throw new Error(`Unexpected path: ${path}`);
+  });
+  await page.run(`
+    const approvalValues = {
+      "[data-registration-mode]": "new",
+      "[data-registration-role]": "Backend Engineer",
+      "[data-registration-grade]": "Junior",
+      "[data-registration-department]": "Engineering",
+      "[data-registration-team]": "Platform",
+    };
+    const approvalRow = { querySelector(selector) { return { value: approvalValues[selector] }; } };
+    const approvalButton = {
+      dataset: { approveRegistration: "U1" },
+      closest() { return approvalRow; },
+      setAttribute() {}, removeAttribute() {},
+    };
+    handleRegistrationDecision({ target: { closest(selector) {
+      return selector === "[data-approve-registration]" ? approvalButton : null;
+    } } });
+  `);
+  assert.equal(submitted.create_new, true);
+  assert.equal(submitted.role, "Backend Engineer");
+  assert.equal(submitted.grade, "Junior");
+  assert.equal(submitted.employee_id, undefined);
+  assert.match(page.element("#toast").textContent, /E0201/);
+});
+
 test("opening requests again fetches newly submitted applications", async () => {
   let calls = 0;
   const page = workspace(async () => ({ registrations: calls++ === 0 ? [] : requests }));

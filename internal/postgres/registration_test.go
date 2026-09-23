@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"careerquest/internal/auth"
+	"careerquest/internal/repository"
 )
 
 // Uses an isolated schema so regression checks never change real accounts.
@@ -62,7 +63,7 @@ func TestRegistrationPostgres(t *testing.T) {
 		INSERT INTO job_roles(id,name) VALUES (1,'Backend Engineer');
 		INSERT INTO grades(id,name,rank) VALUES (1,'Junior',1);
 		INSERT INTO employees(id,full_name,job_role_id,grade_id) VALUES
-			('ACTIVE_EMP','Active employee',1,1), ('PENDING_EMP','Pending employee',1,1), ('REJECTED_EMP','Rejected employee',1,1);
+			('ACTIVE_EMP','Active employee',1,1), ('PENDING_EMP','Pending employee',1,1), ('REJECTED_EMP','Rejected employee',1,1), ('E0200','Last imported employee',1,1);
 		INSERT INTO users(id,email,name,password_hash,status,application_role_id,employee_id) VALUES
 			('ACTIVE_USER','active@example.test','Active','unused','ACTIVE',1,'ACTIVE_EMP'),
 			('PENDING_USER','pending@example.test','Pending','unused','PENDING',1,'PENDING_EMP'),
@@ -140,5 +141,46 @@ func TestRegistrationPostgres(t *testing.T) {
 				t.Fatal("approved account cannot log in")
 			}
 		})
+	}
+	first, err := service.Register(auth.RegistrationInput{Name: "First new member", Email: "first-new@example.test", Password: "test-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.ApproveNewRegistration(first.ID, auth.NewEmployeeApproval{Role: "Backend Engineer", Grade: "Junior", Department: "Engineering"})
+	if err != nil || approved.Status != "ACTIVE" || approved.EmployeeID != "E0201" {
+		t.Fatalf("new employee approval: %+v, %v", approved, err)
+	}
+	employee, ok := store.Employee(approved.EmployeeID)
+	if !ok || employee.FullName != first.Name || employee.Email != first.Email || employee.Department != "Engineering" || employee.Role != "Backend Engineer" {
+		t.Fatalf("new employee record: %+v, found=%v", employee, ok)
+	}
+	if _, ok := service.Authenticate(first.Email, "test-password"); !ok {
+		t.Fatal("newly approved employee cannot sign in")
+	}
+	if _, err := service.ApproveNewRegistration(first.ID, auth.NewEmployeeApproval{Role: "Backend Engineer", Grade: "Junior"}); err == nil {
+		t.Fatal("approval of the same registration must not create another employee")
+	}
+	second, err := service.Register(auth.RegistrationInput{Name: "Second new member", Email: "second-new@example.test", Password: "test-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApproveNewRegistration(second.ID, auth.NewEmployeeApproval{Role: "Backend Engineer", Grade: "Unknown"}); err == nil {
+		t.Fatal("unknown grade must not approve")
+	}
+	unchanged, _, err := store.FindAccountByEmail(second.Email)
+	if err != nil || unchanged.Status != "PENDING" || unchanged.EmployeeID != "" {
+		t.Fatalf("failed approval changed account: %+v, %v", unchanged, err)
+	}
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM employees WHERE email=$1`, second.Email).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("failed approval left employee: count=%d, %v", count, err)
+	}
+	approved, err = service.ApproveNewRegistration(second.ID, auth.NewEmployeeApproval{Role: "Backend Engineer", Grade: "Junior"})
+	if err != nil || approved.EmployeeID == first.EmployeeID || approved.Status != "ACTIVE" {
+		t.Fatalf("second new employee approval: %+v, %v", approved, err)
+	}
+	manual, err := store.CreateEmployee(repository.EmployeeCreate{FullName: "Manual member", Role: "Backend Engineer", Grade: "Junior"})
+	if err != nil || manual.ID == "" || manual.ID == approved.EmployeeID {
+		t.Fatalf("manual employee must receive a distinct generated ID: %+v, %v", manual, err)
 	}
 }

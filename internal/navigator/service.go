@@ -20,11 +20,12 @@ func New(store repository.Store, careerService *career.Service, recommendationSe
 }
 
 type Answer struct {
-	Mode           string               `json:"mode"`
-	EmployeeID     string               `json:"employee_id"`
-	EventID        string               `json:"event_id,omitempty"`
-	Message        string               `json:"message"`
-	Recommendation *recommendation.Item `json:"recommendation,omitempty"`
+	Mode           string                       `json:"mode"`
+	EmployeeID     string                       `json:"employee_id"`
+	EventID        string                       `json:"event_id,omitempty"`
+	Message        string                       `json:"message"`
+	Recommendation *recommendation.Item         `json:"recommendation,omitempty"`
+	LearningPlan   *recommendation.LearningPlan `json:"learning_plan,omitempty"`
 }
 
 func (s *Service) Answer(employeeID, eventID, question string) (Answer, error) {
@@ -77,6 +78,20 @@ func (s *Service) Answer(employeeID, eventID, question string) (Answer, error) {
 	}
 	if selected == nil && containsAny(lowerQuestion, "change my career goal", "change goal", "different goal") {
 		answer.Message = "Changing your career goal recalculates the required skill profile, readiness percentage, blockers, and recommendation ranking. Your assessed skills and activity history stay the same."
+		return answer, nil
+	}
+	if selected == nil && result.LearningPlan != nil && containsAny(lowerQuestion, "next", "plan", "path", "start") {
+		plan := result.LearningPlan
+		steps := make([]string, 0, len(plan.Steps))
+		for index, step := range plan.Steps {
+			steps = append(steps, fmt.Sprintf("%d. %s", index+1, step.Title))
+		}
+		answer.EventID = plan.Steps[0].EventID
+		answer.LearningPlan = plan
+		answer.Message = fmt.Sprintf("Suggested learning order: %s. Start with %s. %s Total study time: %.1f hours.", strings.Join(steps, "; "), plan.Steps[0].Title, plan.Steps[0].Explanation, plan.TotalDurationHours)
+		if plan.ReadinessAfterPercent != nil {
+			answer.Message += fmt.Sprintf(" Completing and passing all steps is projected to increase readiness from %.1f%% to %.1f%%.", *plan.ReadinessBeforePercent, *plan.ReadinessAfterPercent)
+		}
 		return answer, nil
 	}
 	if selected == nil && len(result.Recommendations) > 0 {

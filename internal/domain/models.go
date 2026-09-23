@@ -71,17 +71,19 @@ type Event struct {
 }
 
 type Activity struct {
-	EnrollmentID  int64  `json:"enrollment_id,omitempty"`
-	RecordID      string `json:"record_id"`
-	EmployeeID    string `json:"employee_id"`
-	EventID       string `json:"event_id"`
-	Date          string `json:"date"`
-	DueDate       string `json:"due_date,omitempty"`
-	Status        string `json:"status"`
-	CompletionPct int    `json:"completion_pct"`
-	Score         *int   `json:"score,omitempty"`
-	Feedback      *int   `json:"feedback_rating,omitempty"`
-	AssignedBy    string `json:"assigned_by"`
+	// True when the persisted employee skills already include this completion.
+	SkillRewardsApplied bool   `json:"-"`
+	EnrollmentID        int64  `json:"enrollment_id,omitempty"`
+	RecordID            string `json:"record_id"`
+	EmployeeID          string `json:"employee_id"`
+	EventID             string `json:"event_id"`
+	Date                string `json:"date"`
+	DueDate             string `json:"due_date,omitempty"`
+	Status              string `json:"status"`
+	CompletionPct       int    `json:"completion_pct"`
+	Score               *int   `json:"score,omitempty"`
+	Feedback            *int   `json:"feedback_rating,omitempty"`
+	AssignedBy          string `json:"assigned_by"`
 }
 
 type SkillGap struct {

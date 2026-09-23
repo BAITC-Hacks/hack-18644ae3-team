@@ -83,6 +83,11 @@ func (s *Store) Seed(ctx context.Context, source repository.Store) error {
 			}
 		}
 	}
+	// Migrations run before first-time dataset import. Advance the sequence past
+	// seeded IDs without ever moving it backwards on later restarts.
+	if _, err := tx.ExecContext(ctx, `SELECT setval('employee_id_seq', GREATEST((SELECT last_value FROM employee_id_seq), COALESCE((SELECT MAX(SUBSTRING(id FROM 2)::BIGINT) FROM employees WHERE id ~ '^E[0-9]+$'), 0), 1), true)`); err != nil {
+		return err
+	}
 
 	for _, event := range source.Events() {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO events(id,title,description,type,format,duration_hours,mandatory,learning_link) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING`, event.ID, event.Title, event.Description, event.Type, event.Format, event.DurationHours, event.Mandatory, event.LearningLink); err != nil {

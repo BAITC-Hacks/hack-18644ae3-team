@@ -176,6 +176,11 @@ func (a *API) registrations(w http.ResponseWriter, r *http.Request) {
 
 type registrationDecision struct {
 	EmployeeID string `json:"employee_id"`
+	CreateNew  bool   `json:"create_new"`
+	Role       string `json:"role"`
+	Grade      string `json:"grade"`
+	Department string `json:"department"`
+	Team       string `json:"team"`
 }
 
 func (a *API) approveRegistration(w http.ResponseWriter, r *http.Request) {
@@ -184,7 +189,19 @@ func (a *API) approveRegistration(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	user, err := a.auth.DecideRegistration(r.PathValue("id"), "ACTIVE", request.EmployeeID)
+	var user auth.User
+	var err error
+	if request.CreateNew {
+		if strings.TrimSpace(request.EmployeeID) != "" {
+			writeError(w, http.StatusBadRequest, "choose either a new employee or an existing employee")
+			return
+		}
+		user, err = a.auth.ApproveNewRegistration(r.PathValue("id"), auth.NewEmployeeApproval{
+			Role: request.Role, Grade: request.Grade, Department: request.Department, Team: request.Team,
+		})
+	} else {
+		user, err = a.auth.DecideRegistration(r.PathValue("id"), "ACTIVE", request.EmployeeID)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

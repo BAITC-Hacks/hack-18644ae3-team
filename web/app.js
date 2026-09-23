@@ -102,6 +102,12 @@ function bindActions() {
   $("#cancel-employee-create").addEventListener("click", () => $("#employee-dialog").close());
   $("#employee-form").addEventListener("submit", createEmployee);
   $("#registration-table").addEventListener("click", handleRegistrationDecision);
+  $("#registration-table").addEventListener("change", (event) => {
+    if (!event.target.matches("[data-registration-mode]")) return;
+    const row = event.target.closest("tr");
+    row.querySelector("[data-registration-new]").hidden = event.target.value !== "new";
+    row.querySelector("[data-registration-existing]").hidden = event.target.value !== "existing";
+  });
   $("#employee-table").addEventListener("click", (event) => {
     const button = event.target.closest("[data-open-employee]");
     if (!button) return;
@@ -370,7 +376,25 @@ async function loadRegistrations() {
 function renderRegistrations() {
   if (state.registrations === null) return;
   $("#registration-nav-count").textContent = state.registrations.length;
-  $("#registration-table").innerHTML = state.registrations.length ? state.registrations.map((registration) => `<tr><td><strong>${escapeHTML(registration.name)}</strong></td><td>${escapeHTML(registration.email)}</td><td><small>Requested ID: ${escapeHTML(registration.requested_employee_id || "Not provided")}</small><select aria-label="Employee to link on approval" data-registration-employee="${escapeHTML(registration.id)}"><option value="">Choose employee</option>${state.employees.map((employee) => `<option value="${escapeHTML(employee.employee_id)}" ${employee.employee_id === registration.requested_employee_id ? "selected" : ""}>${escapeHTML(employee.full_name)} (${escapeHTML(employee.employee_id)})</option>`).join("")}</select></td><td><span class="grade-badge">${escapeHTML(registration.status)}</span></td><td><button class="table-action" data-approve-registration="${escapeHTML(registration.id)}">Approve</button> <button class="table-action danger-text" data-reject-registration="${escapeHTML(registration.id)}">Reject</button></td></tr>`).join("") : `<tr><td colspan="5">${emptyState("No pending registrations", "New account requests will appear here.")}</td></tr>`;
+  const roles = state.catalog?.roles || [];
+  const grades = state.catalog?.grades || [];
+  $("#registration-table").innerHTML = state.registrations.length ? state.registrations.map((registration) => `
+    <tr>
+      <td><strong>${escapeHTML(registration.name)}</strong></td>
+      <td>${escapeHTML(registration.email)}<br><small>Requested ID: ${escapeHTML(registration.requested_employee_id || "Not provided")}</small></td>
+      <td><div class="registration-options">
+        <label>Approval type<select data-registration-mode><option value="new">Create new employee (auto ID)</option><option value="existing">Link existing employee</option></select></label>
+        <div data-registration-new class="registration-fields">
+          <label>Job role<select data-registration-role><option value="">Choose role</option>${roles.map((role) => `<option value="${escapeHTML(role)}">${escapeHTML(role)}</option>`).join("")}</select></label>
+          <label>Grade<select data-registration-grade><option value="">Choose grade</option>${grades.map((grade) => `<option value="${escapeHTML(grade)}">${escapeHTML(grade)}</option>`).join("")}</select></label>
+          <label>Department<input data-registration-department placeholder="Optional"></label>
+          <label>Team<input data-registration-team placeholder="Optional"></label>
+        </div>
+        <div data-registration-existing hidden><label>Employee<select data-registration-employee><option value="">Choose employee</option>${state.employees.map((employee) => `<option value="${escapeHTML(employee.employee_id)}" ${employee.employee_id === registration.requested_employee_id ? "selected" : ""}>${escapeHTML(employee.full_name)} (${escapeHTML(employee.employee_id)})</option>`).join("")}</select></label></div>
+      </div></td>
+      <td><span class="grade-badge">${escapeHTML(registration.status)}</span></td>
+      <td><button class="table-action" data-approve-registration="${escapeHTML(registration.id)}">Approve</button> <button class="table-action danger-text" data-reject-registration="${escapeHTML(registration.id)}">Reject</button></td>
+    </tr>`).join("") : `<tr><td colspan="5">${emptyState("No pending registrations", "New account requests will appear here.")}</td></tr>`;
 }
 
 async function handleRegistrationDecision(event) {
@@ -379,10 +403,36 @@ async function handleRegistrationDecision(event) {
   if (!approve && !reject) return;
   const id = approve?.dataset.approveRegistration || reject.dataset.rejectRegistration;
   try {
-    const options = { method: "POST", body: reject ? "{}" : JSON.stringify({ employee_id: $(`[data-registration-employee="${CSS.escape(id)}"]`).value }) };
-    await api(`/registrations/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, options);
-    await loadRegistrations(); showToast(approve ? "Account approved" : "Registration rejected");
+    let payload = {};
+    if (approve) {
+      const row = approve.closest("tr");
+      if (row.querySelector("[data-registration-mode]").value === "new") {
+        payload = {
+          create_new: true,
+          role: row.querySelector("[data-registration-role]").value,
+          grade: row.querySelector("[data-registration-grade]").value,
+          department: row.querySelector("[data-registration-department]").value.trim(),
+          team: row.querySelector("[data-registration-team]").value.trim(),
+        };
+        if (!payload.role || !payload.grade) throw new Error("Choose a job role and grade before approval.");
+      } else {
+        payload = { employee_id: row.querySelector("[data-registration-employee]").value };
+        if (!payload.employee_id) throw new Error("Choose an existing employee before approval.");
+      }
+    }
+    approve?.setAttribute("disabled", "");
+    const result = await api(`/registrations/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, { method: "POST", body: JSON.stringify(payload) });
+    if (approve && payload.create_new) {
+      const employees = await api("/employees");
+      state.employees = employees.employees || [];
+      state.directoryEmployees = state.employees;
+      populateEmployeeSelect();
+      renderEmployeeDirectory();
+    }
+    await loadRegistrations();
+    showToast(approve ? `Account approved as ${result.user.employee_id}` : "Registration rejected");
   } catch (error) { showToast(error.message, true); }
+  finally { approve?.removeAttribute("disabled"); }
 }
 
 async function createEmployee(event) {

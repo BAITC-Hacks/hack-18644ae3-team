@@ -1,4 +1,4 @@
-const employeeState = { user: null, profile: null, path: null, assessment: null, recommendations: [], mandatory: [], activities: [], catalog: null, questTab: "recommended", selectedEvent: "" };
+const employeeState = { user: null, profile: null, path: null, assessment: null, recommendations: [], learningPlan: null, mandatory: [], activities: [], catalog: null, questTab: "recommended", selectedEvent: "" };
 const e$ = (selector, root = document) => root.querySelector(selector);
 const e$$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -49,7 +49,10 @@ function bindEmployeeUI() {
   });
   e$("#employee-prompt-chips").addEventListener("click", (event) => {
     const chip = event.target.closest("[data-prompt]");
-    if (chip) askEmployeeNavigator(chip.dataset.prompt, chip.dataset.event || "");
+    if (chip) {
+      employeeState.selectedEvent = chip.dataset.event || "";
+      askEmployeeNavigator(chip.dataset.prompt, employeeState.selectedEvent);
+    }
   });
   e$("#employee-goal-form").addEventListener("submit", saveEmployeeGoal);
   e$("#employee-cancel-goal").addEventListener("click", () => e$("#employee-goal-dialog").close());
@@ -65,8 +68,8 @@ async function loadMyCareer() {
       employeeAPI(`/employees/${id}`), employeeAPI(`/employees/${id}/career-path`), employeeAPI(`/employees/${id}/skill-gaps`),
       employeeAPI(`/employees/${id}/recommendations`), employeeAPI(`/employees/${id}/mandatory-quests`), employeeAPI(`/employees/${id}/activities`),
     ]);
-    Object.assign(employeeState, { profile, path, assessment, recommendations: recommendations.recommendations || [], mandatory: mandatory.quests || [], activities: activities.activities || [] });
-    employeeState.selectedEvent = employeeState.recommendations[0]?.event_id || "";
+    Object.assign(employeeState, { profile, path, assessment, recommendations: recommendations.recommendations || [], learningPlan: recommendations.learning_plan || null, mandatory: mandatory.quests || [], activities: activities.activities || [] });
+    employeeState.selectedEvent = "";
     renderEmployeeWorkspace();
   } finally {
     e$("#employee-loading").classList.add("hidden");
@@ -79,7 +82,7 @@ function renderEmployeeWorkspace() {
   e$("#employee-position").textContent = `${person.role} · ${person.grade}`;
   e$("#employee-avatar").textContent = employeeInitials(person.full_name);
   e$("#employee-welcome").textContent = `Welcome back, ${person.full_name.split(" ")[0]}`;
-  e$("#my-quest-count").textContent = employeeState.recommendations.length;
+  e$("#my-quest-count").textContent = new Set([...employeeState.recommendations.map((quest) => quest.event_id), ...(employeeState.learningPlan?.steps || []).map((step) => step.event_id)]).size;
   renderPersonalHero(); renderEmployeeReadiness(); renderEmployeeNext(); renderEmployeeCriticalPreview(); renderEmployeeCurrent(); renderMyQuests(); renderEmployeeSkills(); renderEmployeePath(); resetEmployeeNavigator(); renderEmployeeProfile();
 }
 
@@ -95,6 +98,11 @@ function renderEmployeeReadiness() {
 }
 
 function renderEmployeeNext() {
+  const step = employeeState.learningPlan?.steps[0];
+  if (step) {
+    e$("#employee-next-quest").innerHTML = employeePlanStepCard(step, 0, true);
+    return;
+  }
   const quest = employeeState.recommendations[0];
   e$("#employee-next-quest").innerHTML = quest ? employeeQuestCard(quest, true) : employeeEmpty("No eligible quest right now", "Try updating your career goal or check back after new activities are published.");
 }
@@ -110,9 +118,11 @@ function renderEmployeeCurrent() {
 }
 
 function renderMyQuests() {
+  const plan = employeeState.learningPlan;
+  e$("#employee-learning-plan").innerHTML = plan?.steps.length && employeeState.questTab === "recommended" ? `<section class="panel learning-plan-summary"><span class="eyebrow">YOUR SUGGESTED LEARNING ORDER</span><h2>${plan.steps.length} steps toward ${employeeEscape(employeeState.assessment.target_role)} ${employeeEscape(employeeState.assessment.target_grade)}</h2><p>${employeeEscape(plan.steps.map((step) => step.title).join(" → "))}</p><div class="quest-meta"><span>${plan.total_duration_hours} study hours</span>${plan.readiness_after_percent == null ? "" : `<span>Projected readiness: ${plan.readiness_before_percent}% → ${plan.readiness_after_percent}%</span>`}</div><div class="card-actions"><button class="button secondary" data-employee-view-link="path">View learning path</button></div></section>` : "";
   let items;
   if (employeeState.questTab === "recommended") {
-    e$("#employee-quest-list").innerHTML = employeeState.recommendations.length ? employeeState.recommendations.map((quest) => employeeQuestCard(quest)).join("") : employeeEmpty("No recommendations", "There are no eligible activities at the moment.");
+    e$("#employee-quest-list").innerHTML = employeeState.recommendations.length ? employeeState.recommendations.map((quest) => employeeQuestCard(quest)).join("") : plan?.steps.length ? employeeEmpty("Start with your learning path", "The first step builds prerequisites for later activities.") : employeeEmpty("No recommendations", "There are no eligible activities at the moment.");
     return;
   }
   items = employeeState.activities.filter((activity) => employeeState.questTab === "mandatory" ? activity.mandatory : !activity.mandatory && activity.category === employeeState.questTab);
@@ -137,6 +147,10 @@ function employeeQuestCard(quest, featured = false) {
   return `<article class="quest-card ${featured ? "featured-quest" : ""}"><div class="quest-top"><span class="quest-type">${employeeEscape(employeeTitle(quest.type))}</span><span class="score-pill">${quest.match_score} match</span></div><h3>${employeeEscape(quest.title)}</h3><p>${employeeEscape(quest.explanation)}</p><div class="skill-tags">${quest.skills_covered.map((skill) => `<span class="skill-tag ${skill.critical ? "critical" : ""}">${employeeEscape(skill.skill_name)} ${skill.before_level}→${skill.projected_level}</span>`).join("")}</div><div class="quest-meta"><span>◷ ${quest.duration_hours}h</span>${quest.readiness_impact == null ? "" : `<span class="quest-impact">+${quest.readiness_impact}% ready</span>`}</div><div class="card-actions">${link}<button class="button secondary" data-employee-explain="${employeeEscape(quest.event_id)}">Why this quest?</button></div></article>`;
 }
 
+function employeePlanStepCard(step, index, featured = false) {
+  return `<article class="quest-card ${featured ? "featured-quest" : ""}"><div class="quest-top"><span class="quest-type">Step ${index + 1}${index === 0 ? " · Start here" : " · After earlier steps"}</span><span class="grade-badge">${employeeEscape(employeeTitle(step.format))}</span></div><h3>${employeeEscape(step.title)}</h3><p>${employeeEscape(step.explanation)}</p><div class="skill-tags">${step.skills_developed.map((skill) => `<span class="skill-tag ${skill.critical ? "critical" : ""}">${employeeEscape(skill.skill_name)} ${skill.before_level} → ${skill.projected_level}</span>`).join("")}</div><div class="quest-meta"><span>${step.duration_hours} study hours</span>${step.readiness_after_percent == null ? "" : `<span>Projected readiness after step: ${step.readiness_after_percent}%</span>`}</div><div class="card-actions">${step.learning_link ? `<a class="button primary" href="${employeeEscape(step.learning_link)}" target="_blank" rel="noopener noreferrer">Open training</a>` : `<span class="link-pending">Training link not added yet</span>`}${featured ? `<button class="button secondary" data-employee-view-link="path">View full learning path</button>` : ""}</div></article>`;
+}
+
 function employeeActivityCard(activity) {
   const link = activity.learning_link ? `<a class="button primary" href="${employeeEscape(activity.learning_link)}" target="_blank" rel="noopener noreferrer">Open training ↗</a>` : "";
   return `<article class="quest-card"><div class="quest-top"><span class="quest-type">${employeeEscape(employeeTitle(activity.event_type))}</span><span class="grade-badge">${employeeEscape(employeeTitle(activity.status))}</span></div><h3>${employeeEscape(activity.title)}</h3><p>${activity.completion_pct}% complete · ${employeeEscape(activity.assigned_by)} assigned</p><div class="progress-track"><i style="width:${activity.completion_pct}%"></i></div><div class="quest-meta"><span>${employeeEscape(activity.date)}</span><span>◷ ${activity.duration_hours}h</span></div>${link ? `<div class="card-actions">${link}</div>` : ""}</article>`;
@@ -151,6 +165,14 @@ function renderEmployeeSkills() {
 }
 
 function renderEmployeePath() {
+  const plan = employeeState.learningPlan;
+  if (plan?.steps.length) {
+    const person = employeeState.profile.employee;
+    const target = employeeState.assessment;
+    const connector = `<div class="career-path-connector" aria-hidden="true"><i></i><span>↓</span></div>`;
+    e$("#employee-career-path").innerHTML = `<div class="career-path-node current"><span>YOU ARE HERE</span><strong>${employeeEscape(person.role)}</strong><b>${employeeEscape(person.grade)}</b></div>${connector}<div class="learning-plan-intro"><p>${employeeEscape(plan.explanation)}</p><p><strong>${plan.total_duration_hours} study hours · ${plan.remaining_gap_count} skill gaps projected to remain</strong></p></div>${plan.steps.map((step, index) => employeePlanStepCard(step, index) + connector).join("")}<div class="career-path-node goal"><span>${person.career_goal ? "YOUR GOAL" : "CURRENT ROLE TARGET"}</span><strong>${employeeEscape(target.target_role)}</strong><b>${employeeEscape(target.target_grade)}</b>${plan.readiness_after_percent == null ? "" : `<small>Projected readiness: ${plan.readiness_before_percent}% → ${plan.readiness_after_percent}%</small>`}</div>`;
+    return;
+  }
   const person = employeeState.profile.employee, goal = person.career_goal, quest = employeeState.recommendations[0];
   if (!goal) { e$("#employee-career-path").innerHTML = employeeEmpty("Choose a career goal first", "Your visual path will appear here."); return; }
   const impacts = quest?.skills_covered || [];
@@ -162,7 +184,7 @@ function resetEmployeeNavigator() {
   e$("#employee-chat-messages").innerHTML = `<div class="message assistant">Hi ${employeeEscape(first)}. I can explain what blocks your goal, why each quest was selected, and which activity creates the biggest progress.</div>`;
   const prompts = [{ label: "What should I do next?", question: "What should I do next?", event: "" }, { label: "What blocks my promotion?", question: "What is blocking my promotion?", event: "" }, ...employeeState.recommendations.slice(0, 2).map((quest) => ({ label: `Why ${quest.title}?`, question: `Why is ${quest.title} recommended?`, event: quest.event_id }))];
   e$("#employee-prompt-chips").innerHTML = prompts.map((prompt) => `<button class="prompt-chip" data-prompt="${employeeEscape(prompt.question)}" data-event="${employeeEscape(prompt.event)}">${employeeEscape(prompt.label)}</button>`).join("");
-  e$("#employee-navigator-context").innerHTML = `<h3>Your current context</h3><p>Private to your employee account.</p><div class="context-item"><span>Target</span><strong>${employeeEscape(employeeState.assessment.target_role)} · ${employeeEscape(employeeState.assessment.target_grade)}</strong></div><div class="context-item"><span>Readiness</span><strong>${employeeState.assessment.readiness_percent == null ? "Set a goal" : employeeState.assessment.readiness_percent + "%"}</strong></div><div class="context-item"><span>Top quest</span><strong>${employeeEscape(employeeState.recommendations[0]?.title || "None available")}</strong></div>`;
+  e$("#employee-navigator-context").innerHTML = `<h3>Your current context</h3><p>Private to your employee account.</p><div class="context-item"><span>Target</span><strong>${employeeEscape(employeeState.assessment.target_role)} · ${employeeEscape(employeeState.assessment.target_grade)}</strong></div><div class="context-item"><span>Readiness</span><strong>${employeeState.assessment.readiness_percent == null ? "Set a goal" : employeeState.assessment.readiness_percent + "%"}</strong></div><div class="context-item"><span>Top quest</span><strong>${employeeEscape(employeeState.learningPlan?.steps[0]?.title || employeeState.recommendations[0]?.title || "None available")}</strong></div>`;
 }
 
 async function askEmployeeNavigator(question, eventID) {

@@ -62,7 +62,7 @@ func (s *Service) AssessEmployee(employee domain.Employee) (domain.Assessment, e
 func (s *Service) EffectiveSkills(employee domain.Employee) map[string]int {
 	levels := cloneLevels(employee.Skills)
 	for _, activity := range s.store.ActivitiesForEmployee(employee.ID) {
-		if activity.Status != "completed" || activity.Date <= employee.LastReviewDate {
+		if activity.Status != "completed" || activity.SkillRewardsApplied || activity.Date <= employee.LastReviewDate {
 			continue
 		}
 		event, ok := s.store.Event(activity.EventID)
@@ -135,7 +135,8 @@ func Readiness(profile domain.RoleProfile, levels map[string]int) float64 {
 
 func ApplyEvent(levels map[string]int, event domain.Event) {
 	for _, effect := range event.DevelopsSkills {
-		levels[effect.SkillID] = min(levels[effect.SkillID]+effect.Gain, effect.MaxLevel)
+		current := levels[effect.SkillID]
+		levels[effect.SkillID] = max(current, min(current+effect.Gain, effect.MaxLevel))
 	}
 }
 

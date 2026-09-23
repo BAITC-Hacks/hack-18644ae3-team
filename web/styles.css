@@ -431,6 +431,11 @@ button { color: inherit; }
 .mandatory-badge { color: #ad444c; background: var(--danger-soft); }
 .optional-badge { color: #267c60; background: var(--mint-soft); }
 .table-action { border: 0; color: var(--purple); background: none; font-size: 10px; font-weight: 750; }
+.registration-options { min-width: 250px; display: grid; gap: 8px; }
+.registration-options label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
+.registration-options select, .registration-options input { width: 100%; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); }
+.registration-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.registration-options [hidden] { display: none; }
 .muted { color: var(--muted); }
 .catalog-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .catalog-card { display: flex; min-height: 250px; flex-direction: column; padding: 20px; box-shadow: none; }
@@ -466,6 +471,11 @@ button { color: inherit; }
 .personal-hero h2 { margin: 18px 0 5px; font-size: 30px; }.personal-hero > p { margin: 0; color: #a5c9bd; }
 .personal-hero .quest-label { color: #bcebdc; }.personal-hero .path-node.target { background: rgba(54,185,138,.25); }
 .featured-quest { min-height: 240px; border-left: 4px solid var(--purple); }
+.learning-plan-summary { padding: 22px; margin-bottom: 20px; }
+.learning-plan-summary h2 { margin: 10px 0; font-size: 18px; }
+.learning-plan-summary p, .learning-plan-intro { color: var(--muted); font-size: 12px; }
+.learning-plan-intro { width: 100%; margin-bottom: 20px; text-align: center; }
+.career-path-canvas > .quest-card { width: min(560px, 100%); }
 .card-actions { display: flex; align-items: center; gap: 8px; margin-top: 15px; }
 .link-pending { color: var(--muted); font-size: 9px; }
 .quest-tabs { display: flex; gap: 6px; margin-bottom: 18px; padding-bottom: 3px; overflow-x: auto; }
