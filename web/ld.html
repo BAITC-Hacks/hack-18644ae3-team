@@ -47,6 +47,7 @@
   </dialog>
   <dialog class="goal-dialog" id="assessment-dialog"><form id="assessment-form"><div class="dialog-header"><div><span class="eyebrow">COURSE RESULT</span><h2>Assess participant</h2><p id="assessment-participant"></p></div><button type="button" class="dialog-close" id="assessment-close">×</button></div><input type="hidden" id="assessment-enrollment"><label>Result<select id="assessment-result" required><option value="PASSED">Passed</option><option value="FAILED">Failed</option></select></label><label>Score (optional)<input id="assessment-score" type="number" min="0" max="100"></label><label>Feedback<textarea id="assessment-feedback" rows="4"></textarea></label><div class="dialog-actions"><button type="button" class="button secondary" id="assessment-cancel">Cancel</button><button type="submit" class="button primary">Save assessment</button></div></form></dialog>
   <div class="toast" id="ld-toast"></div>
+  <script src="/i18n.js" defer></script>
   <script src="/ld.js" defer></script>
 </body>
 </html>

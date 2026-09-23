@@ -506,3 +506,11 @@ button { color: inherit; }
 @media (max-width: 700px) {
   .login-story { min-height:620px;padding:30px 24px; }.login-story h1 { font-size:42px;letter-spacing:-2px; }.role-preview-grid { grid-template-columns:1fr; }.login-panel { padding:35px 20px; }.workspace-badge { display:none; }.directory-toolbar { flex-direction:column; }.directory-toolbar input { min-width:0; }.directory-panel { overflow-x:auto; }.data-table { min-width:800px; }.catalog-grid,.analytics-grid { grid-template-columns:1fr; }.chart-row { grid-template-columns:110px 1fr 25px; }.path-impact-list { grid-template-columns:1fr; }.check-grid,.check-grid.grades { grid-template-columns:1fr 1fr; }.metadata-row,.metadata-row.prerequisite-row { grid-template-columns:1fr; }.event-dialog form { padding:22px 16px; }.form-grid { grid-template-columns:1fr; }.form-grid .span-2 { grid-column:auto; }.card-actions { align-items:stretch;flex-direction:column; }.profile-skill-row { grid-template-columns:120px 1fr 20px; }
 }
+
+/* Language selector shared by login and all workspaces. */
+.language-switcher { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--green-dark); background: #fff; }
+.language-switcher select { min-width: 92px; max-width: 120px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; font-weight: 700; }
+.login-box > .language-switcher { display: flex; width: fit-content; margin: 0 0 24px auto; }
+.topbar { gap: 12px; }
+html[lang="ru"] .nav-item, html[lang="kk"] .nav-item { font-size: 12px; }
+@media (max-width: 700px) { .topbar { height: auto; min-height: 82px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; } .language-switcher { margin-left: auto; } .employee-switcher { flex-wrap: wrap; } }
