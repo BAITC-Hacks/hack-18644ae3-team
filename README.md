@@ -1,9 +1,9 @@
 # Career Quest
 
-Career Quest is a hackathon backend for deterministic, explainable employee
-development recommendations. The recommendation engine uses role requirements,
-career goals, assessed skills, completed activities, prerequisites, and event
-availability. Mandatory activities are never included in recommendations.
+Career Quest is a role-based career development application for employees, HR,
+and Learning & Development specialists. Recommendations remain deterministic
+and explainable: the engine uses role requirements, career goals, assessed
+skills, completed activities, prerequisites, and event availability.
 
 ## Run
 
@@ -25,22 +25,45 @@ The frontend is served by the same Go process, so there is no Node.js install or
 separate development server. Frontend files live in `web/`; use `-web` to point
 the server at another asset directory.
 
-Career-goal updates are intentionally in-memory and reset when the service is
-restarted.
+Career-goal and course/event updates are intentionally in-memory and reset when
+the service is restarted.
+
+## Demo accounts
+
+All demo accounts use password `demo`.
+
+| Role | Email | Access |
+|---|---|---|
+| HR | `hr@careerquest.demo` | Employee directory, employee development data, event candidates, organization analytics |
+| Employee | `employee@careerquest.demo` | Only employee `E0001` and that employee's career journey |
+| L&D Specialist | `ld@careerquest.demo` | Course/event creation, editing, sessions, links, and aggregate course analytics |
+
+Authentication uses an HTTP-only, same-site session cookie. API authorization
+is enforced by role and, for employee routes, by employee ownership.
 
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | Dataset and service status |
-| `GET` | `/employees` | Employee summaries for the workspace switcher |
-| `GET` | `/employees/{id}` | Employee profile and effective skills |
+| `POST` | `/auth/login` | Start a role-scoped session |
+| `GET` | `/auth/me` | Current authenticated user |
+| `POST` | `/auth/logout` | End the current session |
+| `GET` | `/catalog` | Skills, roles, grades, and proficiency scale |
+| `GET` | `/employees` | HR-only searchable employee directory |
+| `GET` | `/employees/{id}` | HR or owning employee profile |
 | `GET` | `/employees/{id}/career-path` | Goal, readiness, and critical blockers |
 | `GET` | `/employees/{id}/skill-gaps` | Detailed target skill gaps |
 | `GET` | `/employees/{id}/recommendations` | Ranked voluntary activities |
 | `GET` | `/employees/{id}/mandatory-quests` | Latest mandatory assignments, kept outside recommendations |
+| `GET` | `/employees/{id}/activities` | Joined development activity history |
 | `PUT` | `/employees/{id}/career-goal` | Set or clear an in-memory career goal |
+| `GET` | `/events` | Authenticated activity catalog |
+| `POST` | `/events` | L&D-only activity creation |
 | `GET` | `/events/{id}` | Event details |
+| `PUT` | `/events/{id}` | L&D-only activity update |
+| `GET` | `/events/{id}/candidates` | HR-only ranked employee candidates |
+| `GET` | `/events/{id}/analytics` | HR/L&D aggregate activity analytics |
 | `POST` | `/navigator/chat` | Deterministic explanation of a recommendation |
 
 Set a career goal:

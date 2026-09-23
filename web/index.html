@@ -3,199 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Career Quest — turn employee development into a visible career path.">
-  <title>Career Quest</title>
+  <meta name="description" content="Career Quest — role-based career development.">
+  <title>Sign in · Career Quest</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <a class="brand" href="#overview" aria-label="Career Quest home">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32"><path d="M8 7.5h16v17H8z"/><path d="m11.5 17 3 3 6.5-8"/></svg>
-        </span>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-story">
+      <a class="brand login-brand" href="/">
+        <span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M8 7.5h16v17H8z"/><path d="m11.5 17 3 3 6.5-8"/></svg></span>
         <span><strong>Career</strong><em>Quest</em></span>
       </a>
-
-      <div class="sidebar-label">Workspace</div>
-      <nav class="main-nav" aria-label="Main navigation">
-        <button class="nav-item active" data-view="overview">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>
-          <span>Overview</span>
-        </button>
-        <button class="nav-item" data-view="quests">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 4.5 5 .7-3.6 3.5.8 5-4.4-2.4-4.4 2.4.8-5-3.6-3.5 5-.7L12 3Z"/></svg>
-          <span>Quest board</span>
-          <span class="nav-count" id="quest-nav-count">0</span>
-        </button>
-        <button class="nav-item" data-view="skills">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M12 7.5v4M7.8 15.8l2.8-3.5m5.6 3.5-2.8-3.5"/></svg>
-          <span>Skill tree</span>
-        </button>
-        <button class="nav-item" data-view="navigator">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-5 4v-4.5A2.5 2.5 0 0 1 4 13.5v-8Z"/><path d="M8 8h8M8 12h5"/></svg>
-          <span>AI Navigator</span>
-          <span class="status-dot" title="Available"></span>
-        </button>
-      </nav>
-
-      <div class="sidebar-spacer"></div>
-      <div class="snapshot-card">
-        <span class="snapshot-icon">✦</span>
-        <div>
-          <strong>Demo workspace</strong>
-          <span>Snapshot <span id="snapshot-date">—</span></span>
+      <div class="login-story-copy">
+        <span class="eyebrow light">CAREER DEVELOPMENT, CONNECTED</span>
+        <h1>Every activity should move someone forward.</h1>
+        <p>One platform for personal career journeys, organization-wide development, and learning activity management.</p>
+        <div class="role-preview-grid">
+          <div><span>01</span><strong>Employees</strong><p>Understand gaps and take the right next step.</p></div>
+          <div><span>02</span><strong>HR teams</strong><p>Guide development across the organization.</p></div>
+          <div><span>03</span><strong>L&amp;D teams</strong><p>Build activities that close real skill gaps.</p></div>
         </div>
       </div>
-      <div class="sidebar-footer">Career Quest · Hackathon build</div>
-    </aside>
+      <span class="login-footnote">Career Quest · Secure demo workspace</span>
+    </section>
 
-    <main class="main-content">
-      <header class="topbar">
-        <button class="mobile-menu" id="mobile-menu" aria-label="Open navigation">
-          <span></span><span></span><span></span>
-        </button>
-        <div class="employee-switcher">
-          <label for="employee-select">Viewing as</label>
-          <div class="select-wrap">
-            <select id="employee-select" aria-label="Choose employee"></select>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg>
-          </div>
+    <section class="login-panel">
+      <div class="login-box">
+        <span class="eyebrow">WELCOME BACK</span>
+        <h2>Sign in to your workspace</h2>
+        <p>Your role determines what information and tools you can access.</p>
+        <form id="login-form">
+          <label>Email address<input id="login-email" type="email" autocomplete="username" required placeholder="you@careerquest.demo"></label>
+          <label>Password<input id="login-password" type="password" autocomplete="current-password" required placeholder="Enter password"></label>
+          <div class="login-error" id="login-error" role="alert"></div>
+          <button class="button primary login-submit" type="submit">Sign in <span>→</span></button>
+        </form>
+        <div class="demo-divider"><span>Demo accounts</span></div>
+        <div class="demo-accounts">
+          <button data-demo-email="hr@careerquest.demo"><span class="demo-role hr">HR</span><span><strong>HR workspace</strong><small>All employees and analytics</small></span></button>
+          <button data-demo-email="employee@careerquest.demo"><span class="demo-role employee">ME</span><span><strong>Employee workspace</strong><small>Personal career journey</small></span></button>
+          <button data-demo-email="ld@careerquest.demo"><span class="demo-role ld">L&amp;D</span><span><strong>L&amp;D workspace</strong><small>Courses and events</small></span></button>
         </div>
-        <div class="topbar-actions">
-          <button class="icon-button" id="refresh-button" title="Refresh employee data" aria-label="Refresh employee data">
-            <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6.7 6.7L4 11m16 2-2.7 4.3A7 7 0 0 1 5.5 15"/></svg>
-          </button>
-          <div class="profile-chip">
-            <div class="avatar" id="top-avatar">CQ</div>
-            <div><strong id="top-name">Loading…</strong><span id="top-role">—</span></div>
-          </div>
-        </div>
-      </header>
-
-      <div class="loading-screen" id="loading-screen">
-        <div class="loading-orbit"><span></span></div>
-        <p>Building your career path…</p>
+        <p class="demo-hint">All demo accounts use password <code>demo</code>.</p>
       </div>
-
-      <section class="view active" id="view-overview" aria-labelledby="overview-title">
-        <div class="page-heading">
-          <div>
-            <span class="eyebrow" id="greeting-eyebrow">YOUR CAREER DASHBOARD</span>
-            <h1 id="overview-title">Welcome back</h1>
-            <p id="overview-subtitle">Your next career milestone is taking shape.</p>
-          </div>
-          <button class="button secondary" data-open-goal>
-            <svg viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"/><path d="M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/></svg>
-            Edit career goal
-          </button>
-        </div>
-
-        <div class="overview-grid">
-          <article class="panel main-quest-card" id="main-quest-card"></article>
-          <article class="panel readiness-card" id="readiness-card"></article>
-        </div>
-
-        <div class="section-heading">
-          <div><span class="eyebrow">RECOMMENDED FOR YOU</span><h2>Next best quests</h2></div>
-          <button class="text-button" data-go-view="quests">View quest board <span>→</span></button>
-        </div>
-        <div class="quest-preview-grid" id="quest-preview-grid"></div>
-
-        <div class="dashboard-bottom">
-          <section>
-            <div class="section-heading compact">
-              <div><span class="eyebrow">FOCUS AREA</span><h2>Skills blocking your next level</h2></div>
-              <button class="text-button" data-go-view="skills">Full skill tree <span>→</span></button>
-            </div>
-            <div class="panel skill-focus" id="skill-focus"></div>
-          </section>
-          <section>
-            <div class="section-heading compact">
-              <div><span class="eyebrow">REQUIRED</span><h2>Mandatory quests</h2></div>
-            </div>
-            <div class="panel mandatory-list" id="mandatory-list"></div>
-          </section>
-        </div>
-      </section>
-
-      <section class="view" id="view-quests" aria-labelledby="quests-title">
-        <div class="page-heading">
-          <div><span class="eyebrow">YOUR OPPORTUNITIES</span><h1 id="quests-title">Quest board</h1><p>Every activity below is eligible, available, and tied to a real skill gap.</p></div>
-          <div class="filter-row">
-            <select id="quest-format-filter" aria-label="Filter quests by format">
-              <option value="all">All formats</option>
-              <option value="online">Online</option>
-              <option value="offline">Offline</option>
-              <option value="self_paced">Self-paced</option>
-            </select>
-          </div>
-        </div>
-        <div class="quest-board-summary" id="quest-board-summary"></div>
-        <div class="quest-board" id="quest-board"></div>
-      </section>
-
-      <section class="view" id="view-skills" aria-labelledby="skills-title">
-        <div class="page-heading">
-          <div><span class="eyebrow">YOUR CAPABILITY MAP</span><h1 id="skills-title">Skill tree</h1><p id="skills-subtitle">Measured against your career target.</p></div>
-          <button class="button secondary" data-open-goal>Edit target</button>
-        </div>
-        <div class="skill-summary" id="skill-summary"></div>
-        <div class="skill-columns">
-          <section class="panel skill-panel critical-panel">
-            <div class="panel-title"><div class="title-icon danger">!</div><div><h2>Critical blockers</h2><p>These must meet the target requirement.</p></div></div>
-            <div id="critical-skills"></div>
-          </section>
-          <section class="panel skill-panel">
-            <div class="panel-title"><div class="title-icon purple">↗</div><div><h2>Growth skills</h2><p>Build these to increase overall readiness.</p></div></div>
-            <div id="growth-skills"></div>
-          </section>
-        </div>
-      </section>
-
-      <section class="view" id="view-navigator" aria-labelledby="navigator-title">
-        <div class="page-heading">
-          <div><span class="eyebrow">EXPLAINABLE GUIDANCE</span><h1 id="navigator-title">AI Navigator</h1><p>Ask why an activity matters or what to work on next.</p></div>
-          <span class="mode-badge"><span></span> Deterministic mode</span>
-        </div>
-        <div class="navigator-layout">
-          <div class="panel chat-panel">
-            <div class="chat-header">
-              <div class="navigator-avatar">✦</div>
-              <div><strong>Career Navigator</strong><span>Grounded in your recommendation data</span></div>
-            </div>
-            <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
-            <div class="prompt-chips" id="prompt-chips"></div>
-            <form class="chat-form" id="chat-form">
-              <input id="chat-input" placeholder="Ask about your career path…" autocomplete="off">
-              <button type="submit" aria-label="Send message">
-                <svg viewBox="0 0 24 24"><path d="m4 4 17 8-17 8 3-8-3-8Z"/><path d="M7 12h14"/></svg>
-              </button>
-            </form>
-          </div>
-          <aside class="panel navigator-context" id="navigator-context"></aside>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <dialog class="goal-dialog" id="goal-dialog">
-    <form method="dialog" id="goal-form">
-      <div class="dialog-header">
-        <div><span class="eyebrow">MAIN QUEST</span><h2>Choose your career goal</h2><p>Recommendations will immediately adapt to this target.</p></div>
-        <button class="dialog-close" value="cancel" aria-label="Close">×</button>
-      </div>
-      <label>Target role<select id="goal-role" required></select></label>
-      <label>Target grade<select id="goal-grade" required><option>Junior</option><option>Middle</option><option>Senior</option><option>Lead</option></select></label>
-      <div class="dialog-actions">
-        <button type="button" class="button ghost danger-text" id="clear-goal">Clear goal</button>
-        <button type="button" class="button secondary" id="cancel-goal">Cancel</button>
-        <button type="submit" class="button primary">Save career goal</button>
-      </div>
-    </form>
-  </dialog>
-
-  <div class="toast" id="toast" role="status"></div>
-  <script src="/app.js" defer></script>
+    </section>
+  </main>
+  <script src="/login.js" defer></script>
 </body>
 </html>

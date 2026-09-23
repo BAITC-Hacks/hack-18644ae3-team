@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>L&amp;D Workspace · Career Quest</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar ld-sidebar">
+      <a class="brand" href="#dashboard"><span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M8 7.5h16v17H8z"/><path d="m11.5 17 3 3 6.5-8"/></svg></span><span><strong>Career</strong><em>Quest</em></span></a>
+      <div class="workspace-badge ld">L&amp;D WORKSPACE</div>
+      <nav class="main-nav">
+        <button class="nav-item active" data-ld-view="dashboard"><span class="nav-symbol">▦</span><span>L&amp;D Dashboard</span></button>
+        <button class="nav-item" data-ld-view="events"><span class="nav-symbol">✦</span><span>Courses &amp; Events</span><span class="nav-count" id="ld-event-count">0</span></button>
+        <button class="nav-item" data-ld-create><span class="nav-symbol">＋</span><span>Create Event</span></button>
+        <button class="nav-item" data-ld-view="sessions"><span class="nav-symbol">□</span><span>Upcoming Sessions</span></button>
+        <button class="nav-item" data-ld-view="analytics"><span class="nav-symbol">↗</span><span>Course Analytics</span></button>
+        <button class="nav-item" data-ld-view="profile"><span class="nav-symbol">○</span><span>Profile</span></button>
+      </nav>
+      <div class="sidebar-spacer"></div><button class="logout-button" id="ld-logout">↪ <span>Log out</span></button>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div><span class="eyebrow">LEARNING &amp; DEVELOPMENT</span><strong id="ld-page-context">Dashboard</strong></div><div class="profile-chip"><div class="avatar ld-avatar" id="ld-avatar">LD</div><div><strong id="ld-name">Loading…</strong><span>L&amp;D Specialist</span></div></div></header>
+      <div class="loading-screen" id="ld-loading"><div class="loading-orbit"><span></span></div><p>Loading learning catalog…</p></div>
+
+      <section class="view active" id="ld-view-dashboard"><div class="page-heading"><div><span class="eyebrow">CATALOG OVERVIEW</span><h1>Learning that closes real gaps</h1><p>Manage development metadata while training continues in your existing tools.</p></div><button class="button primary" data-ld-create>＋ Create activity</button></div><div class="analytics-grid" id="ld-metrics"></div><div class="ld-dashboard-grid"><section class="panel chart-panel"><div class="panel-title"><div><h2>Upcoming sessions</h2><p>Next scheduled learning opportunities</p></div></div><div id="ld-session-preview"></div></section><section class="panel chart-panel"><div class="panel-title"><div><h2>Catalog mix</h2><p>Activities by delivery format</p></div></div><div id="ld-format-bars"></div></section></div></section>
+
+      <section class="view" id="ld-view-events"><div class="page-heading"><div><span class="eyebrow">ACTIVITY CATALOG</span><h1>Courses &amp; Events</h1><p>Create and maintain career-development metadata and external learning links.</p></div><button class="button primary" data-ld-create>＋ Create event</button></div><div class="directory-toolbar"><input id="ld-event-search" placeholder="Search title or skill…"><select id="ld-event-filter"><option value="">All types</option></select></div><div class="panel directory-panel"><table class="data-table"><thead><tr><th>Activity</th><th>Type / Format</th><th>Target</th><th>Duration</th><th>Sessions</th><th></th></tr></thead><tbody id="ld-event-table"></tbody></table></div></section>
+
+      <section class="view" id="ld-view-sessions"><div class="page-heading"><div><span class="eyebrow">DELIVERY CALENDAR</span><h1>Upcoming Sessions</h1><p>Scheduled sessions across all externally delivered activities.</p></div></div><div class="session-timeline" id="ld-session-list"></div></section>
+
+      <section class="view" id="ld-view-analytics"><div class="page-heading"><div><span class="eyebrow">COURSE PERFORMANCE</span><h1>Course Analytics</h1><p>Participation and completion signals without exposing full employee profiles.</p></div></div><div class="analytics-selector"><select id="ld-analytics-event"></select></div><div id="ld-analytics-content"></div></section>
+
+      <section class="view" id="ld-view-profile"><div class="page-heading"><div><span class="eyebrow">ACCOUNT</span><h1>L&amp;D Profile</h1><p>Your role is scoped to learning activity management.</p></div></div><div class="panel account-card" id="ld-account"></div></section>
+    </main>
+  </div>
+
+  <dialog class="event-dialog" id="event-dialog">
+    <form id="event-form">
+      <div class="dialog-header"><div><span class="eyebrow">ACTIVITY METADATA</span><h2 id="event-form-title">Create event</h2><p>Training remains external; Career Quest manages targeting and career impact.</p></div><button type="button" class="dialog-close" id="event-dialog-close">×</button></div>
+      <input type="hidden" id="event-id">
+      <div class="form-grid"><label class="span-2">Title<input id="event-title" required></label><label class="span-2">Description<textarea id="event-description" rows="3" required></textarea></label><label>Type<select id="event-type"><option>course</option><option>workshop</option><option>mentoring</option><option>certification</option><option>meetup</option><option>compliance</option><option>onboarding</option></select></label><label>Format<select id="event-format"><option>online</option><option>offline</option><option>self_paced</option></select></label><label>Duration (hours)<input id="event-duration" type="number" min="0.5" step="0.5" required></label><label class="toggle-label"><input id="event-mandatory" type="checkbox"> Mandatory activity</label><label class="span-2">Learning link<input id="event-link" type="url" placeholder="https://lms.example.com/course"></label></div>
+      <fieldset><legend>Target roles</legend><div class="check-grid" id="event-roles"></div></fieldset>
+      <fieldset><legend>Target grades</legend><div class="check-grid grades" id="event-grades"></div></fieldset>
+      <fieldset><legend>Skills developed</legend><div id="event-effects"></div><button type="button" class="add-row-button" id="add-effect">＋ Add skill</button></fieldset>
+      <fieldset><legend>Prerequisites</legend><div id="event-prerequisites"></div><button type="button" class="add-row-button" id="add-prerequisite">＋ Add prerequisite</button></fieldset>
+      <label class="form-block">Upcoming sessions <textarea id="event-sessions" rows="3" placeholder="2026-11-23&#10;2026-12-14"></textarea><small>One ISO date per line. Leave empty for self-paced activities.</small></label>
+      <div class="dialog-actions"><button type="button" class="button secondary" id="event-cancel">Cancel</button><button type="submit" class="button primary">Save activity</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="ld-toast"></div>
+  <script src="/ld.js" defer></script>
+</body>
+</html>

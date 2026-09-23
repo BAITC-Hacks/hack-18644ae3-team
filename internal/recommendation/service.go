@@ -28,6 +28,7 @@ type Item struct {
 	Type                   string        `json:"type"`
 	Format                 string        `json:"format"`
 	DurationHours          float64       `json:"duration_hours"`
+	LearningLink           string        `json:"learning_link,omitempty"`
 	MatchScore             float64       `json:"match_score"`
 	Alignment              string        `json:"alignment"`
 	SkillsCovered          []SkillImpact `json:"skills_covered"`
@@ -48,6 +49,17 @@ type Result struct {
 	Recommendations []Item `json:"recommendations"`
 }
 
+type Candidate struct {
+	EmployeeID      string   `json:"employee_id"`
+	FullName        string   `json:"full_name"`
+	Role            string   `json:"role"`
+	Grade           string   `json:"grade"`
+	Department      string   `json:"department"`
+	MatchScore      float64  `json:"match_score"`
+	ReadinessImpact *float64 `json:"readiness_impact,omitempty"`
+	Alignment       string   `json:"alignment"`
+}
+
 type Service struct {
 	store  *dataset.Store
 	career *career.Service
@@ -55,6 +67,42 @@ type Service struct {
 
 func New(store *dataset.Store, careerService *career.Service) *Service {
 	return &Service{store: store, career: careerService}
+}
+
+func (s *Service) CandidatesForEvent(eventID string) ([]Candidate, error) {
+	if _, ok := s.store.Event(eventID); !ok {
+		return nil, fmt.Errorf("event %q not found", eventID)
+	}
+	candidates := make([]Candidate, 0)
+	for _, employee := range s.store.Employees() {
+		result, err := s.ForEmployee(employee.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range result.Recommendations {
+			if item.EventID != eventID {
+				continue
+			}
+			candidates = append(candidates, Candidate{
+				EmployeeID:      employee.ID,
+				FullName:        employee.FullName,
+				Role:            employee.Role,
+				Grade:           employee.Grade,
+				Department:      employee.Department,
+				MatchScore:      item.MatchScore,
+				ReadinessImpact: item.ReadinessImpact,
+				Alignment:       item.Alignment,
+			})
+			break
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].MatchScore != candidates[j].MatchScore {
+			return candidates[i].MatchScore > candidates[j].MatchScore
+		}
+		return candidates[i].EmployeeID < candidates[j].EmployeeID
+	})
+	return candidates, nil
 }
 
 func (s *Service) ForEmployee(employeeID string) (Result, error) {
@@ -174,6 +222,7 @@ func (s *Service) ForEmployee(employeeID string) (Result, error) {
 			Type:             event.Type,
 			Format:           event.Format,
 			DurationHours:    event.DurationHours,
+			LearningLink:     event.LearningLink,
 			MatchScore:       score,
 			Alignment:        alignment,
 			SkillsCovered:    impacts,

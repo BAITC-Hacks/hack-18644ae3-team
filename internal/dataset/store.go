@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -331,6 +332,29 @@ func (s *Store) Skill(id string) (domain.Skill, bool) {
 	return skill, ok
 }
 
+func (s *Store) Skills() []domain.Skill {
+	result := make([]domain.Skill, 0, len(s.skills))
+	for _, skill := range s.skills {
+		result = append(result, skill)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
+func (s *Store) Profiles() []domain.RoleProfile {
+	result := make([]domain.RoleProfile, 0, len(s.profiles))
+	for _, profile := range s.profiles {
+		result = append(result, cloneProfile(profile))
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Role == result[j].Role {
+			return result[i].Grade < result[j].Grade
+		}
+		return result[i].Role < result[j].Role
+	})
+	return result
+}
+
 func (s *Store) Profile(role, grade string) (domain.RoleProfile, bool) {
 	profile, ok := s.profiles[profileKey(role, grade)]
 	return cloneProfile(profile), ok
@@ -380,17 +404,110 @@ func (s *Store) UpdateCareerGoal(id string, goal *domain.CareerGoal) (domain.Emp
 }
 
 func (s *Store) Event(id string) (domain.Event, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	event, ok := s.events[id]
 	return cloneEvent(event), ok
 }
 
 func (s *Store) Events() []domain.Event {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	result := make([]domain.Event, 0, len(s.events))
 	for _, event := range s.events {
 		result = append(result, cloneEvent(event))
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func (s *Store) CreateEvent(event domain.Event) (domain.Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for sequence := 1; ; sequence++ {
+		candidate := fmt.Sprintf("EV_%03d", sequence)
+		if _, exists := s.events[candidate]; !exists {
+			event.ID = candidate
+			break
+		}
+	}
+	if err := s.validateEvent(event); err != nil {
+		return domain.Event{}, err
+	}
+	s.events[event.ID] = cloneEvent(event)
+	return cloneEvent(event), nil
+}
+
+func (s *Store) UpdateEvent(id string, event domain.Event) (domain.Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.events[id]; !exists {
+		return domain.Event{}, fmt.Errorf("event %q not found", id)
+	}
+	event.ID = id
+	if err := s.validateEvent(event); err != nil {
+		return domain.Event{}, err
+	}
+	s.events[id] = cloneEvent(event)
+	return cloneEvent(event), nil
+}
+
+func (s *Store) validateEvent(event domain.Event) error {
+	if strings.TrimSpace(event.Title) == "" {
+		return errors.New("event title is required")
+	}
+	if strings.TrimSpace(event.Description) == "" {
+		return errors.New("event description is required")
+	}
+	if event.DurationHours <= 0 {
+		return errors.New("duration_hours must be greater than zero")
+	}
+	if len(event.TargetRoles) == 0 || len(event.TargetGrades) == 0 {
+		return errors.New("at least one target role and grade are required")
+	}
+	validRoles, validGrades := make(map[string]bool), make(map[string]bool)
+	for _, profile := range s.profiles {
+		validRoles[profile.Role] = true
+		validGrades[profile.Grade] = true
+	}
+	for _, role := range event.TargetRoles {
+		if !validRoles[role] {
+			return fmt.Errorf("unknown target role %q", role)
+		}
+	}
+	for _, grade := range event.TargetGrades {
+		if !validGrades[grade] {
+			return fmt.Errorf("unknown target grade %q", grade)
+		}
+	}
+	for _, effect := range event.DevelopsSkills {
+		if _, ok := s.skills[effect.SkillID]; !ok {
+			return fmt.Errorf("unknown developed skill %q", effect.SkillID)
+		}
+		if effect.Gain <= 0 || effect.MaxLevel < 1 || effect.MaxLevel > 5 {
+			return fmt.Errorf("invalid skill effect for %s", effect.SkillID)
+		}
+	}
+	for skillID, level := range event.Prerequisites {
+		if _, ok := s.skills[skillID]; !ok {
+			return fmt.Errorf("unknown prerequisite skill %q", skillID)
+		}
+		if level < 0 || level > 5 {
+			return fmt.Errorf("invalid prerequisite level for %s", skillID)
+		}
+	}
+	for _, session := range event.UpcomingSessions {
+		if _, err := time.Parse(dateLayout, session); err != nil {
+			return fmt.Errorf("invalid upcoming session date %q", session)
+		}
+	}
+	if event.LearningLink != "" {
+		parsed, err := url.ParseRequestURI(event.LearningLink)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return errors.New("learning_link must be a valid http or https URL")
+		}
+	}
+	return nil
 }
 
 func (s *Store) ActivitiesForEmployee(id string) []domain.Activity {

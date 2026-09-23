@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HR Dashboard · Career Quest</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview"><span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M8 7.5h16v17H8z"/><path d="m11.5 17 3 3 6.5-8"/></svg></span><span><strong>Career</strong><em>Quest</em></span></a>
+      <div class="workspace-badge">HR WORKSPACE</div>
+      <nav class="main-nav" aria-label="HR navigation">
+        <button class="nav-item active" data-view="overview"><span class="nav-symbol">▦</span><span>Dashboard</span></button>
+        <button class="nav-item" data-view="employees"><span class="nav-symbol">♙</span><span>Employees</span><span class="nav-count" id="employee-nav-count">0</span></button>
+        <button class="nav-item" data-view="events"><span class="nav-symbol">✦</span><span>Events</span><span class="nav-count" id="quest-nav-count">0</span></button>
+        <button class="nav-item" data-view="analytics"><span class="nav-symbol">↗</span><span>Analytics</span></button>
+        <button class="nav-item" data-view="profile"><span class="nav-symbol">○</span><span>Profile</span></button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="snapshot-card"><span class="snapshot-icon">✦</span><div><strong>HR secure view</strong><span>Snapshot <span id="snapshot-date">—</span></span></div></div>
+      <button class="logout-button" data-logout>↪ <span>Log out</span></button>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="employee-switcher"><label for="employee-select">Employee profile</label><div class="select-wrap"><select id="employee-select"></select><svg viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></svg></div></div>
+        <div class="topbar-actions"><button class="icon-button" id="refresh-button" title="Refresh">↻</button><div class="profile-chip"><div class="avatar" id="top-avatar">HR</div><div><strong id="top-name">HR workspace</strong><span id="top-role">Authorized access</span></div></div></div>
+      </header>
+      <div class="loading-screen" id="loading-screen"><div class="loading-orbit"><span></span></div><p>Loading secure workspace…</p></div>
+
+      <section class="view active" id="view-overview">
+        <div class="page-heading"><div><span class="eyebrow" id="greeting-eyebrow">EMPLOYEE DEVELOPMENT</span><h1 id="overview-title">Employee overview</h1><p id="overview-subtitle">Review career progress and recommended development.</p></div><button class="button secondary" data-open-goal>Edit employee goal</button></div>
+        <div class="overview-grid"><article class="panel main-quest-card" id="main-quest-card"></article><article class="panel readiness-card" id="readiness-card"></article></div>
+        <div class="section-heading"><div><span class="eyebrow">RECOMMENDED DEVELOPMENT</span><h2>Next best activities</h2></div><button class="text-button" data-go-view="quests">View all <span>→</span></button></div>
+        <div class="quest-preview-grid" id="quest-preview-grid"></div>
+        <div class="dashboard-bottom">
+          <section><div class="section-heading compact"><div><span class="eyebrow">FOCUS AREA</span><h2>Skill gaps</h2></div><button class="text-button" data-go-view="skills">Full skill view <span>→</span></button></div><div class="panel skill-focus" id="skill-focus"></div></section>
+          <section><div class="section-heading compact"><div><span class="eyebrow">ACTIVITY</span><h2>Latest development</h2></div></div><div class="panel mandatory-list" id="mandatory-list"></div></section>
+        </div>
+        <div class="section-heading"><div><span class="eyebrow">DEVELOPMENT PROGRESS</span><h2>Activity status</h2></div></div>
+        <div class="activity-status-grid" id="hr-activity-status"></div>
+      </section>
+
+      <section class="view" id="view-employees">
+        <div class="page-heading"><div><span class="eyebrow">ORGANIZATION</span><h1>Employees</h1><p>Search the organization and open an employee development profile.</p></div></div>
+        <div class="directory-toolbar"><input id="employee-search" placeholder="Search name, ID, department or role…"><select id="employee-role-filter"><option value="">All roles</option></select><select id="employee-grade-filter"><option value="">All grades</option></select></div>
+        <div class="panel directory-panel"><table class="data-table"><thead><tr><th>Employee</th><th>Role</th><th>Grade</th><th>Department</th><th>Career goal</th><th></th></tr></thead><tbody id="employee-table"></tbody></table></div>
+      </section>
+
+      <section class="view" id="view-events">
+        <div class="page-heading"><div><span class="eyebrow">LEARNING CATALOG</span><h1>Events and courses</h1><p>Review activities and see the strongest eligible candidates.</p></div></div>
+        <div class="directory-toolbar"><input id="hr-event-search" placeholder="Search events…"><select id="hr-event-type"><option value="">All types</option></select></div>
+        <div class="catalog-grid" id="hr-event-grid"></div>
+      </section>
+
+      <section class="view" id="view-analytics">
+        <div class="page-heading"><div><span class="eyebrow">ORGANIZATION SIGNALS</span><h1>Development analytics</h1><p>High-level workforce and learning catalog indicators.</p></div></div>
+        <div class="analytics-grid" id="hr-analytics"></div>
+        <div class="panel chart-panel"><div class="panel-title"><div><h2>Employees by role</h2><p>Current workforce distribution</p></div></div><div id="role-bars"></div></div>
+      </section>
+
+      <section class="view" id="view-profile"><div class="page-heading"><div><span class="eyebrow">ACCOUNT</span><h1>HR profile</h1><p>Your authenticated workspace identity.</p></div></div><div class="panel account-card" id="hr-account"></div></section>
+
+      <section class="view" id="view-quests"><div class="page-heading"><div><span class="eyebrow">EMPLOYEE OPPORTUNITIES</span><h1>Recommended activities</h1><p>Eligible activities ranked for the selected employee.</p></div><div class="filter-row"><select id="quest-format-filter"><option value="all">All formats</option><option value="online">Online</option><option value="offline">Offline</option><option value="self_paced">Self-paced</option></select></div></div><div class="quest-board-summary" id="quest-board-summary"></div><div class="quest-board" id="quest-board"></div></section>
+      <section class="view" id="view-skills"><div class="page-heading"><div><span class="eyebrow">CAPABILITY MAP</span><h1>Employee skill gaps</h1><p id="skills-subtitle"></p></div><button class="button secondary" data-open-goal>Edit target</button></div><div class="skill-summary" id="skill-summary"></div><div class="skill-columns"><section class="panel skill-panel critical-panel"><div class="panel-title"><div class="title-icon danger">!</div><div><h2>Critical blockers</h2><p>Required for the target role.</p></div></div><div id="critical-skills"></div></section><section class="panel skill-panel"><div class="panel-title"><div class="title-icon purple">↗</div><div><h2>Growth skills</h2><p>Additional readiness gaps.</p></div></div><div id="growth-skills"></div></section></div></section>
+      <section class="view" id="view-navigator"><div class="page-heading"><div><span class="eyebrow">EXPLAINABLE GUIDANCE</span><h1>Recommendation explanation</h1><p>Inspect the evidence behind a recommendation.</p></div><span class="mode-badge"><span></span> Deterministic mode</span></div><div class="navigator-layout"><div class="panel chat-panel"><div class="chat-header"><div class="navigator-avatar">✦</div><div><strong>Career Navigator</strong><span>Grounded in employee data</span></div></div><div class="chat-messages" id="chat-messages"></div><div class="prompt-chips" id="prompt-chips"></div><form class="chat-form" id="chat-form"><input id="chat-input" placeholder="Ask about this employee’s path…"><button type="submit">→</button></form></div><aside class="panel navigator-context" id="navigator-context"></aside></div></section>
+    </main>
+  </div>
+
+  <dialog class="goal-dialog" id="goal-dialog"><form method="dialog" id="goal-form"><div class="dialog-header"><div><span class="eyebrow">CAREER GOAL</span><h2>Update employee target</h2><p>This immediately recalculates recommendations.</p></div><button class="dialog-close" value="cancel">×</button></div><label>Target role<select id="goal-role" required></select></label><label>Target grade<select id="goal-grade" required><option>Junior</option><option>Middle</option><option>Senior</option><option>Lead</option></select></label><div class="dialog-actions"><button type="button" class="button ghost danger-text" id="clear-goal">Clear goal</button><button type="button" class="button secondary" id="cancel-goal">Cancel</button><button type="submit" class="button primary">Save goal</button></div></form></dialog>
+  <dialog class="goal-dialog candidate-dialog" id="candidate-dialog"><div class="dialog-header"><div><span class="eyebrow">EVENT TARGETING</span><h2 id="candidate-title">Best candidates</h2><p>Eligible employees ranked by recommendation score.</p></div><button class="dialog-close" id="close-candidates">×</button></div><div id="candidate-list"></div></dialog>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

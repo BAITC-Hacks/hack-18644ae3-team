@@ -1,10 +1,14 @@
 const state = {
+  user: null,
   employees: [],
+  catalog: null,
+  events: [],
   profile: null,
   careerPath: null,
   assessment: null,
   recommendations: [],
   mandatory: [],
+  activities: [],
   selectedEventId: "",
   activeView: "overview",
 };
@@ -18,14 +22,25 @@ async function init() {
   bindNavigation();
   bindActions();
   try {
-    const [health, employeeResult] = await Promise.all([
+    const session = await api("/auth/me");
+    if (session.user.role !== "hr") {
+      location.replace(session.redirect);
+      return;
+    }
+    state.user = session.user;
+    const [health, employeeResult, catalog, eventResult] = await Promise.all([
       api("/health"),
       api("/employees"),
+      api("/catalog"),
+      api("/events"),
     ]);
     state.employees = employeeResult.employees || [];
+    state.catalog = catalog;
+    state.events = eventResult.events || [];
     $("#snapshot-date").textContent = formatDate(health.as_of_date);
     populateEmployeeSelect();
     populateGoalRoles();
+    populateHRFilters();
     const remembered = localStorage.getItem("careerQuestEmployee");
     const firstID = state.employees.some((employee) => employee.employee_id === remembered)
       ? remembered
@@ -57,6 +72,30 @@ function bindActions() {
   $("#employee-select").addEventListener("change", (event) => loadEmployee(event.target.value));
   $("#refresh-button").addEventListener("click", () => loadEmployee(state.profile.employee.employee_id, true));
   $("#quest-format-filter").addEventListener("change", renderQuestBoard);
+  $("#employee-search").addEventListener("input", renderEmployeeDirectory);
+  $("#employee-role-filter").addEventListener("change", renderEmployeeDirectory);
+  $("#employee-grade-filter").addEventListener("change", renderEmployeeDirectory);
+  $("#hr-event-search").addEventListener("input", renderHREvents);
+  $("#hr-event-type").addEventListener("change", renderHREvents);
+  $("#employee-table").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-open-employee]");
+    if (!button) return;
+    $("#employee-select").value = button.dataset.openEmployee;
+    loadEmployee(button.dataset.openEmployee).then(() => showView("overview"));
+  });
+  $("#hr-event-grid").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-event-candidates]");
+    if (button) showCandidates(button.dataset.eventCandidates);
+  });
+  $("#close-candidates").addEventListener("click", () => $("#candidate-dialog").close());
+  $("#candidate-list").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-candidate-employee]");
+    if (!row) return;
+    $("#candidate-dialog").close();
+    $("#employee-select").value = row.dataset.candidateEmployee;
+    loadEmployee(row.dataset.candidateEmployee).then(() => showView("overview"));
+  });
+  $$('[data-logout]').forEach((button) => button.addEventListener("click", logout));
   document.addEventListener("click", (event) => {
     if (event.target.closest("[data-open-goal]")) openGoalDialog();
     const explain = event.target.closest("[data-explain-event]");
@@ -89,18 +128,20 @@ async function loadEmployee(employeeID, refreshed = false) {
   setLoading(true);
   try {
     const encoded = encodeURIComponent(employeeID);
-    const [profile, careerPath, assessment, recommendationResult, mandatoryResult] = await Promise.all([
+    const [profile, careerPath, assessment, recommendationResult, mandatoryResult, activityResult] = await Promise.all([
       api(`/employees/${encoded}`),
       api(`/employees/${encoded}/career-path`),
       api(`/employees/${encoded}/skill-gaps`),
       api(`/employees/${encoded}/recommendations`),
       api(`/employees/${encoded}/mandatory-quests`),
+      api(`/employees/${encoded}/activities`),
     ]);
     state.profile = profile;
     state.careerPath = careerPath;
     state.assessment = assessment;
     state.recommendations = recommendationResult.recommendations || [];
     state.mandatory = mandatoryResult.quests || [];
+    state.activities = activityResult.activities || [];
     state.selectedEventId = state.recommendations[0]?.event_id || "";
     localStorage.setItem("careerQuestEmployee", employeeID);
     renderAll();
@@ -122,16 +163,22 @@ function renderAll() {
   renderQuestBoard();
   renderSkills();
   resetNavigator();
+  renderEmployeeDirectory();
+  renderHREvents();
+  renderHRAnalytics();
+  renderHRAccount();
+  renderHRActivityStatus();
   $("#quest-nav-count").textContent = state.recommendations.length;
+  $("#employee-nav-count").textContent = state.employees.length;
 }
 
 function renderIdentity() {
   const employee = state.profile.employee;
   const firstName = employee.full_name.split(" ")[0];
-  $("#top-name").textContent = employee.full_name;
-  $("#top-role").textContent = `${employee.role} · ${employee.grade}`;
-  $("#top-avatar").textContent = initials(employee.full_name);
-  $("#overview-title").textContent = `Welcome back, ${firstName}`;
+  $("#top-name").textContent = state.user.name;
+  $("#top-role").textContent = "HR · Organization access";
+  $("#top-avatar").textContent = initials(state.user.name);
+  $("#overview-title").textContent = `${firstName}’s development profile`;
   $("#overview-subtitle").textContent = employee.career_goal
     ? `You’re building momentum toward ${employee.career_goal.target_role} · ${employee.career_goal.target_grade}.`
     : "Set a career goal to turn development activities into a focused path.";
@@ -215,15 +262,109 @@ function renderSkillFocus() {
 }
 
 function renderMandatory() {
-  const sorted = [...state.mandatory].sort((a, b) => (a.status === "overdue" ? -1 : 1) - (b.status === "overdue" ? -1 : 1));
+  const latestByEvent = new Map();
+  state.activities.forEach((activity) => {
+    if (!latestByEvent.has(activity.event_id)) latestByEvent.set(activity.event_id, activity);
+  });
+  const sorted = [...latestByEvent.values()];
   $("#mandatory-list").innerHTML = sorted.length ? sorted.slice(0, 4).map((quest) => {
     const overdue = quest.status === "overdue";
     const meta = overdue && quest.due_date ? `Due ${formatDate(quest.due_date)}` : `${titleCase(quest.status)} · ${quest.completion_pct}%`;
     return `<div class="mandatory-item">
-      <div class="mandatory-status ${overdue ? "overdue" : ""}">${overdue ? "!" : "✓"}</div>
+      <div class="mandatory-status ${overdue ? "overdue" : ""}">${overdue ? "!" : quest.status === "completed" ? "✓" : "↗"}</div>
       <div><strong>${escapeHTML(quest.title)}</strong><span class="${overdue ? "overdue-text" : ""}">${escapeHTML(meta)}</span></div>
     </div>`;
-  }).join("") : emptyState("Nothing assigned", "There are no mandatory quests for this employee.");
+  }).join("") : emptyState("No activity yet", "There is no development history for this employee.");
+}
+
+function populateHRFilters() {
+  $("#employee-role-filter").innerHTML += state.catalog.roles.map((role) => `<option>${escapeHTML(role)}</option>`).join("");
+  $("#employee-grade-filter").innerHTML += state.catalog.grades.map((grade) => `<option>${escapeHTML(grade)}</option>`).join("");
+  const types = [...new Set(state.events.map((event) => event.type))].sort();
+  $("#hr-event-type").innerHTML += types.map((type) => `<option value="${escapeHTML(type)}">${escapeHTML(titleCase(type))}</option>`).join("");
+}
+
+function renderEmployeeDirectory() {
+  const query = $("#employee-search").value.trim().toLowerCase();
+  const role = $("#employee-role-filter").value;
+  const grade = $("#employee-grade-filter").value;
+  const employees = state.employees.filter((employee) => {
+    const searchable = `${employee.full_name} ${employee.employee_id} ${employee.department} ${employee.role}`.toLowerCase();
+    return (!query || searchable.includes(query)) && (!role || employee.role === role) && (!grade || employee.grade === grade);
+  });
+  $("#employee-table").innerHTML = employees.length ? employees.map((employee) => `
+    <tr>
+      <td><div class="table-person"><span>${escapeHTML(initials(employee.full_name))}</span><div><strong>${escapeHTML(employee.full_name)}</strong><small>${escapeHTML(employee.employee_id)}</small></div></div></td>
+      <td>${escapeHTML(employee.role)}</td><td><span class="grade-badge">${escapeHTML(employee.grade)}</span></td><td>${escapeHTML(employee.department)}</td>
+      <td>${employee.career_goal ? `${escapeHTML(employee.career_goal.target_role)} · ${escapeHTML(employee.career_goal.target_grade)}` : '<span class="muted">Not set</span>'}</td>
+      <td><button class="table-action" data-open-employee="${escapeHTML(employee.employee_id)}">Open →</button></td>
+    </tr>`).join("") : `<tr><td colspan="6">${emptyState("No employees found", "Try changing the directory filters.")}</td></tr>`;
+}
+
+function renderHREvents() {
+  const query = $("#hr-event-search").value.trim().toLowerCase();
+  const type = $("#hr-event-type").value;
+  const events = state.events.filter((event) => (!query || `${event.title} ${event.description}`.toLowerCase().includes(query)) && (!type || event.type === type));
+  $("#hr-event-grid").innerHTML = events.length ? events.map((event) => `
+    <article class="panel catalog-card">
+      <div class="quest-top"><span class="quest-type">${escapeHTML(titleCase(event.type))}</span><span class="${event.mandatory ? "mandatory-badge" : "optional-badge"}">${event.mandatory ? "Mandatory" : "Optional"}</span></div>
+      <h3>${escapeHTML(event.title)}</h3><p>${escapeHTML(event.description)}</p>
+      <div class="skill-tags">${event.develops_skills.slice(0, 3).map((skill) => `<span class="skill-tag">${escapeHTML(skill.skill_id.replace("SK_", "").replaceAll("_", " "))} +${skill.gain}</span>`).join("")}</div>
+      <div class="quest-meta"><span>◷ ${formatHours(event.duration_hours)}</span><span>${escapeHTML(titleCase(event.format))}</span></div>
+      <button class="button secondary full-button" data-event-candidates="${escapeHTML(event.event_id)}">View best candidates</button>
+    </article>`).join("") : emptyState("No events found", "Try changing the catalog filters.");
+}
+
+function renderHRAnalytics() {
+  const withGoals = state.employees.filter((employee) => employee.career_goal).length;
+  const mandatory = state.events.filter((event) => event.mandatory).length;
+  const upcoming = state.events.reduce((sum, event) => sum + event.upcoming_sessions.length, 0);
+  $("#hr-analytics").innerHTML = [
+    [state.employees.length, "Employees"],
+    [`${Math.round(withGoals / state.employees.length * 100)}%`, "Career goals set"],
+    [state.events.length - mandatory, "Voluntary activities"],
+    [upcoming, "Upcoming sessions"],
+  ].map(([value, label]) => `<div class="panel metric-card"><strong>${value}</strong><span>${label}</span></div>`).join("");
+  const counts = Object.entries(state.employees.reduce((acc, employee) => ({ ...acc, [employee.role]: (acc[employee.role] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]);
+  const maxCount = Math.max(...counts.map(([, count]) => count), 1);
+  $("#role-bars").innerHTML = counts.map(([role, count]) => `<div class="chart-row"><span>${escapeHTML(role)}</span><div><i style="width:${count / maxCount * 100}%"></i></div><strong>${count}</strong></div>`).join("");
+}
+
+function renderHRAccount() {
+  $("#hr-account").innerHTML = `<div class="account-avatar">${escapeHTML(initials(state.user.name))}</div><div><span class="eyebrow">HR ACCOUNT</span><h2>${escapeHTML(state.user.name)}</h2><p>${escapeHTML(state.user.email)}</p><span class="access-badge">Organization development access</span></div>`;
+}
+
+function renderHRActivityStatus() {
+  const sections = [
+    ["completed", "Completed", state.activities.filter((activity) => !activity.mandatory && activity.status === "completed")],
+    ["in_progress", "Planned / In progress", state.activities.filter((activity) => !activity.mandatory && ["planned", "enrolled", "in_progress"].includes(activity.status))],
+    ["mandatory", "Mandatory", state.activities.filter((activity) => activity.mandatory)],
+  ];
+  $("#hr-activity-status").innerHTML = sections.map(([kind, label, activities]) => {
+    const latest = activities.filter((activity, index, all) => all.findIndex((item) => item.event_id === activity.event_id) === index).slice(0, 3);
+    return `<article class="panel activity-status-card"><div class="activity-status-head"><span class="title-icon ${kind === "mandatory" ? "danger" : "purple"}">${kind === "completed" ? "✓" : kind === "mandatory" ? "!" : "↗"}</span><div><strong>${escapeHTML(label)}</strong><small>${activities.length} records</small></div></div>${latest.length ? latest.map((activity) => `<div class="activity-mini-row"><span>${escapeHTML(activity.title)}</span><b>${escapeHTML(titleCase(activity.status))}</b></div>`).join("") : `<p class="muted">No activities in this status.</p>`}</article>`;
+  }).join("");
+}
+
+async function showCandidates(eventID) {
+  const event = state.events.find((item) => item.event_id === eventID);
+  $("#candidate-title").textContent = `${event?.title || "Event"} candidates`;
+  $("#candidate-list").innerHTML = `<div class="empty-state">Loading eligible candidates…</div>`;
+  $("#candidate-dialog").showModal();
+  try {
+    const result = await api(`/events/${encodeURIComponent(eventID)}/candidates`);
+    $("#candidate-list").innerHTML = result.candidates.length ? result.candidates.slice(0, 20).map((candidate, index) => `
+      <button class="candidate-row" data-candidate-employee="${escapeHTML(candidate.employee_id)}">
+        <span class="candidate-rank">${index + 1}</span><span class="candidate-avatar">${escapeHTML(initials(candidate.full_name))}</span><span><strong>${escapeHTML(candidate.full_name)}</strong><small>${escapeHTML(candidate.role)} · ${escapeHTML(candidate.grade)}</small></span><b>${number(candidate.match_score)}</b>
+      </button>`).join("") : emptyState("No eligible candidates", "No employee currently meets the event filters and target gaps.");
+  } catch (error) {
+    $("#candidate-list").innerHTML = emptyState("Could not load candidates", error.message);
+  }
+}
+
+async function logout() {
+  await api("/auth/logout", { method: "POST", body: "{}" });
+  location.replace("/");
 }
 
 function renderQuestBoard() {

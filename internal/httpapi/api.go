@@ -6,43 +6,132 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"careerquest/internal/auth"
 	"careerquest/internal/career"
 	"careerquest/internal/dataset"
 	"careerquest/internal/domain"
+	"careerquest/internal/events"
+	"careerquest/internal/navigator"
 	"careerquest/internal/recommendation"
 )
 
 type API struct {
-	store          *dataset.Store
-	career         *career.Service
-	recommendation *recommendation.Service
+	store            *dataset.Store
+	auth             *auth.Service
+	career           *career.Service
+	events           *events.Service
+	navigatorService *navigator.Service
+	recommendation   *recommendation.Service
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (a *API) login(w http.ResponseWriter, r *http.Request) {
+	var request loginRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user, ok := a.auth.Authenticate(request.Email, request.Password)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+	if err := a.auth.StartSession(w, r, user); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not start session")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": user, "redirect": roleHome(user.Role)})
+}
+
+func (a *API) me(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.UserFromContext(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{"user": user, "redirect": roleHome(user.Role)})
+}
+
+func (a *API) logout(w http.ResponseWriter, r *http.Request) {
+	a.auth.EndSession(w, r)
+	writeJSON(w, http.StatusOK, map[string]bool{"logged_out": true})
+}
+
+func roleHome(role auth.Role) string {
+	switch role {
+	case auth.RoleHR:
+		return "/hr.html"
+	case auth.RoleEmployee:
+		return "/employee.html"
+	case auth.RoleLD:
+		return "/ld.html"
+	default:
+		return "/"
+	}
 }
 
 func New(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service) http.Handler {
-	return newHandler(store, careerService, recommendationService, "")
+	return newHandler(store, careerService, recommendationService, auth.NewDemoService(), "")
 }
 
 func NewWithFrontend(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service, webDir string) http.Handler {
-	return newHandler(store, careerService, recommendationService, webDir)
+	return newHandler(store, careerService, recommendationService, auth.NewDemoService(), webDir)
 }
 
-func newHandler(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service, webDir string) http.Handler {
-	api := &API{store: store, career: careerService, recommendation: recommendationService}
+func NewWithAuth(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service, authService *auth.Service, webDir string) http.Handler {
+	return newHandler(store, careerService, recommendationService, authService, webDir)
+}
+
+func newHandler(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service, authService *auth.Service, webDir string) http.Handler {
+	api := &API{store: store, auth: authService, career: careerService, events: events.New(store), navigatorService: navigator.New(store, careerService, recommendationService), recommendation: recommendationService}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", api.health)
-	mux.HandleFunc("GET /employees", api.employees)
-	mux.HandleFunc("GET /employees/{id}", api.employee)
-	mux.HandleFunc("GET /employees/{id}/career-path", api.careerPath)
-	mux.HandleFunc("GET /employees/{id}/skill-gaps", api.skillGaps)
-	mux.HandleFunc("GET /employees/{id}/recommendations", api.recommendations)
-	mux.HandleFunc("GET /employees/{id}/mandatory-quests", api.mandatoryQuests)
-	mux.HandleFunc("PUT /employees/{id}/career-goal", api.updateCareerGoal)
-	mux.HandleFunc("GET /events/{id}", api.event)
-	mux.HandleFunc("POST /navigator/chat", api.navigator)
+	mux.HandleFunc("POST /auth/login", api.login)
+	mux.Handle("GET /auth/me", authService.RequireAuthenticated(http.HandlerFunc(api.me)))
+	mux.Handle("POST /auth/logout", authService.RequireAuthenticated(http.HandlerFunc(api.logout)))
+
+	requireHR := func(handler http.HandlerFunc) http.Handler {
+		return authService.RequireAuthenticated(auth.RequireRole(auth.RoleHR)(handler))
+	}
+	requireLD := func(handler http.HandlerFunc) http.Handler {
+		return authService.RequireAuthenticated(auth.RequireRole(auth.RoleLD)(handler))
+	}
+	requireHRorLD := func(handler http.HandlerFunc) http.Handler {
+		return authService.RequireAuthenticated(auth.RequireRole(auth.RoleHR, auth.RoleLD)(handler))
+	}
+	requireEmployeeAccess := func(handler http.HandlerFunc) http.Handler {
+		return authService.RequireAuthenticated(auth.RequireEmployeeOwnerOrRole("id", auth.RoleHR)(handler))
+	}
+
+	mux.Handle("GET /catalog", authService.RequireAuthenticated(http.HandlerFunc(api.catalog)))
+	mux.Handle("GET /employees", requireHR(http.HandlerFunc(api.employees)))
+	mux.Handle("GET /employees/{id}", requireEmployeeAccess(http.HandlerFunc(api.employee)))
+	mux.Handle("GET /employees/{id}/career-path", requireEmployeeAccess(http.HandlerFunc(api.careerPath)))
+	mux.Handle("GET /employees/{id}/skill-gaps", requireEmployeeAccess(http.HandlerFunc(api.skillGaps)))
+	mux.Handle("GET /employees/{id}/recommendations", requireEmployeeAccess(http.HandlerFunc(api.recommendations)))
+	mux.Handle("GET /employees/{id}/mandatory-quests", requireEmployeeAccess(http.HandlerFunc(api.mandatoryQuests)))
+	mux.Handle("GET /employees/{id}/activities", requireEmployeeAccess(http.HandlerFunc(api.employeeActivities)))
+	mux.Handle("PUT /employees/{id}/career-goal", requireEmployeeAccess(http.HandlerFunc(api.updateCareerGoal)))
+	mux.Handle("GET /events", authService.RequireAuthenticated(http.HandlerFunc(api.listEvents)))
+	mux.Handle("POST /events", requireLD(http.HandlerFunc(api.createEvent)))
+	mux.Handle("GET /events/{id}", authService.RequireAuthenticated(http.HandlerFunc(api.event)))
+	mux.Handle("PUT /events/{id}", requireLD(http.HandlerFunc(api.updateEvent)))
+	mux.Handle("GET /events/{id}/candidates", requireHR(http.HandlerFunc(api.eventCandidates)))
+	mux.Handle("GET /events/{id}/analytics", requireHRorLD(http.HandlerFunc(api.eventAnalytics)))
+	mux.Handle("POST /navigator/chat", authService.RequireAuthenticated(http.HandlerFunc(api.navigator)))
 	if webDir != "" {
+		servePage := func(name string) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.ServeFile(w, r, filepath.Join(webDir, name))
+			})
+		}
+		mux.Handle("GET /hr.html", authService.RequireAuthenticated(auth.RequireRole(auth.RoleHR)(servePage("hr.html"))))
+		mux.Handle("GET /employee.html", authService.RequireAuthenticated(auth.RequireRole(auth.RoleEmployee)(servePage("employee.html"))))
+		mux.Handle("GET /ld.html", authService.RequireAuthenticated(auth.RequireRole(auth.RoleLD)(servePage("ld.html"))))
 		mux.Handle("GET /", http.FileServer(http.Dir(webDir)))
 	}
 	return cors(mux)
@@ -67,10 +156,47 @@ type employeeSummary struct {
 	CareerGoal        *domain.CareerGoal `json:"career_goal"`
 }
 
-func (a *API) employees(w http.ResponseWriter, _ *http.Request) {
+func (a *API) catalog(w http.ResponseWriter, _ *http.Request) {
+	profiles := a.store.Profiles()
+	roles, grades := make(map[string]bool), make(map[string]bool)
+	for _, profile := range profiles {
+		roles[profile.Role] = true
+		grades[profile.Grade] = true
+	}
+	roleList, gradeList := make([]string, 0, len(roles)), make([]string, 0, len(grades))
+	for role := range roles {
+		roleList = append(roleList, role)
+	}
+	for grade := range grades {
+		gradeList = append(gradeList, grade)
+	}
+	slices.Sort(roleList)
+	gradeOrder := map[string]int{"Junior": 0, "Middle": 1, "Senior": 2, "Lead": 3}
+	slices.SortFunc(gradeList, func(a, b string) int { return gradeOrder[a] - gradeOrder[b] })
+	writeJSON(w, http.StatusOK, map[string]any{
+		"skills":            a.store.Skills(),
+		"roles":             roleList,
+		"grades":            gradeList,
+		"proficiency_scale": a.store.ProficiencyScale(),
+	})
+}
+
+func (a *API) employees(w http.ResponseWriter, r *http.Request) {
 	employees := a.store.Employees()
 	result := make([]employeeSummary, 0, len(employees))
+	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	roleFilter := r.URL.Query().Get("role")
+	gradeFilter := r.URL.Query().Get("grade")
 	for _, employee := range employees {
+		if query != "" && !strings.Contains(strings.ToLower(employee.FullName+" "+employee.ID+" "+employee.Department+" "+employee.Role), query) {
+			continue
+		}
+		if roleFilter != "" && employee.Role != roleFilter {
+			continue
+		}
+		if gradeFilter != "" && employee.Grade != gradeFilter {
+			continue
+		}
 		result = append(result, employeeSummary{
 			ID:                employee.ID,
 			FullName:          employee.FullName,
@@ -207,6 +333,18 @@ func (a *API) mandatoryQuests(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *API) employeeActivities(w http.ResponseWriter, r *http.Request) {
+	activities, err := a.events.EmployeeActivities(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"employee_id": r.PathValue("id"),
+		"activities":  activities,
+	})
+}
+
 type goalUpdateRequest struct {
 	TargetRole  string `json:"target_role"`
 	TargetGrade string `json:"target_grade"`
@@ -257,6 +395,63 @@ func (a *API) event(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, event)
 }
 
+func (a *API) listEvents(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"events": a.store.Events()})
+}
+
+func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
+	var event domain.Event
+	if err := decodeJSON(w, r, &event); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	created, err := a.store.CreateEvent(event)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (a *API) updateEvent(w http.ResponseWriter, r *http.Request) {
+	var event domain.Event
+	if err := decodeJSON(w, r, &event); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := a.store.UpdateEvent(r.PathValue("id"), event)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+		} else {
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (a *API) eventCandidates(w http.ResponseWriter, r *http.Request) {
+	candidates, err := a.recommendation.CandidatesForEvent(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"event_id":   r.PathValue("id"),
+		"candidates": candidates,
+	})
+}
+
+func (a *API) eventAnalytics(w http.ResponseWriter, r *http.Request) {
+	analytics, err := a.events.Analytics(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, analytics)
+}
+
 type navigatorRequest struct {
 	EmployeeID string `json:"employee_id"`
 	EventID    string `json:"event_id,omitempty"`
@@ -273,45 +468,21 @@ func (a *API) navigator(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "employee_id is required")
 		return
 	}
+	user, _ := auth.UserFromContext(r.Context())
+	if !auth.CanAccessEmployee(user, request.EmployeeID, auth.RoleHR) {
+		writeError(w, http.StatusForbidden, "you cannot access another employee's information")
+		return
+	}
 	if _, ok := a.store.Employee(request.EmployeeID); !ok {
 		writeError(w, http.StatusNotFound, "employee not found")
 		return
 	}
-	result, err := a.recommendation.ForEmployee(request.EmployeeID)
+	answer, err := a.navigatorService.Answer(request.EmployeeID, request.EventID, request.Question)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var selected *recommendation.Item
-	if request.EventID != "" {
-		for i := range result.Recommendations {
-			if result.Recommendations[i].EventID == request.EventID {
-				selected = &result.Recommendations[i]
-				break
-			}
-		}
-		if selected == nil {
-			writeError(w, http.StatusBadRequest, "event is not currently recommended for this employee")
-			return
-		}
-	} else if len(result.Recommendations) > 0 {
-		selected = &result.Recommendations[0]
-	}
-	if selected == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"mode":        "deterministic",
-			"employee_id": request.EmployeeID,
-			"message":     "No eligible skill-building activity currently matches the employee's gaps.",
-		})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"mode":           "deterministic",
-		"employee_id":    request.EmployeeID,
-		"event_id":       selected.EventID,
-		"message":        selected.Explanation,
-		"recommendation": selected,
-	})
+	writeJSON(w, http.StatusOK, answer)
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
@@ -338,9 +509,9 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "same-origin")
 		if strings.EqualFold(r.Method, http.MethodOptions) {
 			w.WriteHeader(http.StatusNoContent)
 			return

@@ -3,6 +3,8 @@ package dataset
 import (
 	"path/filepath"
 	"testing"
+
+	"careerquest/internal/domain"
 )
 
 func TestLoadCareerQuestDataset(t *testing.T) {
@@ -31,6 +33,41 @@ func TestLoadCareerQuestDataset(t *testing.T) {
 	}
 	if store.Meta().AsOfDate != "2026-10-01" {
 		t.Fatalf("as_of_date = %q, want 2026-10-01", store.Meta().AsOfDate)
+	}
+}
+
+func TestCreateAndUpdateEvent(t *testing.T) {
+	store, err := Load(filepath.Join("..", "..", "case_1", "career_quest_dataset"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	event := domain.Event{
+		Title:            "API Design Lab",
+		Description:      "Practical API design exercises.",
+		Type:             "workshop",
+		Format:           "online",
+		DurationHours:    4,
+		TargetRoles:      []string{"Backend Engineer"},
+		TargetGrades:     []string{"Junior", "Middle"},
+		DevelopsSkills:   []domain.SkillEffect{{SkillID: "SK_API_DESIGN", Gain: 1, MaxLevel: 4}},
+		Prerequisites:    map[string]int{},
+		UpcomingSessions: []string{"2026-11-15"},
+		LearningLink:     "https://example.com/api-design",
+	}
+	created, err := store.CreateEvent(event)
+	if err != nil {
+		t.Fatalf("CreateEvent() error = %v", err)
+	}
+	if created.ID == "" || created.LearningLink != event.LearningLink {
+		t.Fatalf("unexpected created event: %#v", created)
+	}
+	created.Title = "Updated API Design Lab"
+	updated, err := store.UpdateEvent(created.ID, created)
+	if err != nil {
+		t.Fatalf("UpdateEvent() error = %v", err)
+	}
+	if updated.Title != "Updated API Design Lab" {
+		t.Fatalf("updated title = %q", updated.Title)
 	}
 }
 

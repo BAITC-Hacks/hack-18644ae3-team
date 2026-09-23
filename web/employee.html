@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My Career · Career Quest</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar employee-sidebar">
+      <a class="brand" href="#career"><span class="brand-mark"><svg viewBox="0 0 32 32"><path d="M8 7.5h16v17H8z"/><path d="m11.5 17 3 3 6.5-8"/></svg></span><span><strong>Career</strong><em>Quest</em></span></a>
+      <div class="workspace-badge employee">MY WORKSPACE</div>
+      <nav class="main-nav">
+        <button class="nav-item active" data-employee-view="career"><span class="nav-symbol">⌂</span><span>My Career</span></button>
+        <button class="nav-item" data-employee-view="quests"><span class="nav-symbol">✦</span><span>My Quests</span><span class="nav-count" id="my-quest-count">0</span></button>
+        <button class="nav-item" data-employee-view="skills"><span class="nav-symbol">⌘</span><span>Skills</span></button>
+        <button class="nav-item" data-employee-view="path"><span class="nav-symbol">↗</span><span>Career Path</span></button>
+        <button class="nav-item" data-employee-view="navigator"><span class="nav-symbol">◇</span><span>AI Navigator</span><span class="status-dot"></span></button>
+        <button class="nav-item" data-employee-view="profile"><span class="nav-symbol">○</span><span>Profile</span></button>
+      </nav>
+      <div class="sidebar-spacer"></div><button class="logout-button" id="employee-logout">↪ <span>Log out</span></button>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div><span class="eyebrow">PERSONAL CAREER SPACE</span><strong id="employee-page-context">My Career</strong></div><div class="profile-chip"><div class="avatar" id="employee-avatar">—</div><div><strong id="employee-name">Loading…</strong><span id="employee-position">—</span></div></div></header>
+      <div class="loading-screen" id="employee-loading"><div class="loading-orbit"><span></span></div><p>Loading your career journey…</p></div>
+
+      <section class="view active" id="employee-view-career">
+        <div class="page-heading"><div><span class="eyebrow">YOUR CAREER DASHBOARD</span><h1 id="employee-welcome">My career</h1><p>See exactly where you are, what is missing, and the best next step.</p></div><button class="button secondary" data-employee-goal>Edit career goal</button></div>
+        <div class="employee-hero-grid"><article class="panel personal-hero" id="personal-hero"></article><article class="panel readiness-card" id="employee-readiness"></article></div>
+        <div class="section-heading"><div><span class="eyebrow">BEST NEXT STEP</span><h2>Recommended next quest</h2></div><button class="text-button" data-employee-view-link="quests">All my quests →</button></div>
+        <div id="employee-next-quest"></div>
+        <div class="dashboard-bottom"><section><div class="section-heading compact"><div><span class="eyebrow">PROMOTION BLOCKERS</span><h2>Critical skill gaps</h2></div><button class="text-button" data-employee-view-link="skills">All skills →</button></div><div class="panel skill-focus" id="employee-critical-preview"></div></section><section><div class="section-heading compact"><div><span class="eyebrow">IN MOTION</span><h2>Current activities</h2></div></div><div class="panel mandatory-list" id="employee-current-preview"></div></section></div>
+      </section>
+
+      <section class="view" id="employee-view-quests">
+        <div class="page-heading"><div><span class="eyebrow">DEVELOPMENT ACTIVITIES</span><h1>My Quests</h1><p>Everything recommended, underway, completed, or required for you.</p></div></div>
+        <div class="quest-tabs" id="employee-quest-tabs"><button class="active" data-quest-tab="recommended">Recommended</button><button data-quest-tab="planned">Planned / Enrolled</button><button data-quest-tab="in_progress">In Progress</button><button data-quest-tab="completed">Completed</button><button data-quest-tab="mandatory">Mandatory</button></div>
+        <div class="quest-board" id="employee-quest-list"></div>
+      </section>
+
+      <section class="view" id="employee-view-skills"><div class="page-heading"><div><span class="eyebrow">YOUR CAPABILITY MAP</span><h1>Skills</h1><p id="employee-skills-subtitle"></p></div></div><div class="skill-summary" id="employee-skill-summary"></div><div class="skill-columns"><section class="panel skill-panel critical-panel"><div class="panel-title"><div class="title-icon danger">!</div><div><h2>Critical gaps</h2><p>Must reach the target level.</p></div></div><div id="employee-critical-skills"></div></section><section class="panel skill-panel"><div class="panel-title"><div class="title-icon purple">↗</div><div><h2>Growth skills</h2><p>Increase overall readiness.</p></div></div><div id="employee-growth-skills"></div></section></div></section>
+
+      <section class="view" id="employee-view-path"><div class="page-heading"><div><span class="eyebrow">VISIBLE PROGRESS</span><h1>Career Path</h1><p>How the next activity closes your gaps and moves you toward the goal.</p></div><button class="button secondary" data-employee-goal>Change goal</button></div><div class="career-path-canvas" id="employee-career-path"></div></section>
+
+      <section class="view" id="employee-view-navigator"><div class="page-heading"><div><span class="eyebrow">YOUR CAREER GUIDE</span><h1>AI Career Navigator</h1><p>Recommendations are calculated by the engine; Navigator explains them.</p></div><span class="mode-badge"><span></span> Grounded guidance</span></div><div class="navigator-layout"><div class="panel chat-panel"><div class="chat-header"><div class="navigator-avatar">✦</div><div><strong>Career Navigator</strong><span>Uses only your career data</span></div></div><div class="chat-messages" id="employee-chat-messages"></div><div class="prompt-chips" id="employee-prompt-chips"></div><form class="chat-form" id="employee-chat-form"><input id="employee-chat-input" placeholder="What should I do next?"><button type="submit">→</button></form></div><aside class="panel navigator-context" id="employee-navigator-context"></aside></div></section>
+
+      <section class="view" id="employee-view-profile"><div class="page-heading"><div><span class="eyebrow">PERSONAL DETAILS</span><h1>My Profile</h1><p>Your role, team, career goal, and assessed capability data.</p></div></div><div class="profile-layout"><div class="panel profile-identity" id="employee-profile-card"></div><div class="panel profile-skills"><div class="panel-title"><div><h2>Assessed skills</h2><p>Effective levels include completed activities since your last review.</p></div></div><div id="employee-all-skills"></div></div></div></section>
+    </main>
+  </div>
+  <dialog class="goal-dialog" id="employee-goal-dialog"><form method="dialog" id="employee-goal-form"><div class="dialog-header"><div><span class="eyebrow">MY MAIN QUEST</span><h2>Choose a career goal</h2><p>Your path and recommendations will adapt immediately.</p></div><button class="dialog-close" value="cancel">×</button></div><label>Target role<select id="employee-goal-role" required></select></label><label>Target grade<select id="employee-goal-grade" required></select></label><div class="dialog-actions"><button type="button" class="button ghost danger-text" id="employee-clear-goal">Clear goal</button><button type="button" class="button secondary" id="employee-cancel-goal">Cancel</button><button type="submit" class="button primary">Save goal</button></div></form></dialog>
+  <div class="toast" id="employee-toast"></div>
+  <script src="/employee.js" defer></script>
+</body>
+</html>

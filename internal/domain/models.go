@@ -62,6 +62,7 @@ type Event struct {
 	DevelopsSkills   []SkillEffect  `json:"develops_skills"`
 	Prerequisites    map[string]int `json:"prerequisites"`
 	UpcomingSessions []string       `json:"upcoming_sessions"`
+	LearningLink     string         `json:"learning_link,omitempty"`
 }
 
 type Activity struct {
