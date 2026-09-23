@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"os"
 	"strings"
@@ -72,6 +73,23 @@ func TestRegistrationPostgres(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		if err := store.Migrate(ctx); err != nil {
 			t.Fatal(err)
+		}
+	}
+	// A compliance course can legitimately have no skill improvement or session.
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO events(id,title,type,format,duration_hours) VALUES('NO_SKILLS','Compliance','compliance','online',1)`); err != nil {
+		t.Fatal(err)
+	}
+	compliance, ok := store.Event("NO_SKILLS")
+	if !ok {
+		t.Fatal("could not load compliance course")
+	}
+	encoded, err := json.Marshal(compliance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"develops_skills":[]`, `"upcoming_sessions":[]`, `"target_roles":[]`, `"target_grades":[]`} {
+		if !strings.Contains(string(encoded), field) {
+			t.Fatalf("event has a null array %s: %s", field, encoded)
 		}
 	}
 	for _, status := range []string{"PENDING", "REJECTED"} {

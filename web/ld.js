@@ -11,7 +11,7 @@ async function ldInit() {
     if (session.user.role !== "ld") return location.replace(session.redirect);
     ldState.user = session.user;
     const [catalog, eventResult] = await Promise.all([ldAPI("/catalog"), ldAPI("/events")]);
-    ldState.catalog = catalog; ldState.events = eventResult.events || [];
+    ldState.catalog = catalog; ldState.events = (eventResult.events || []).map(normalizeLDEvent);
     setupEventForm(); renderLDWorkspace();
   } catch (error) {
     ldToast(error.message, true); l$("#ld-loading p").textContent = "Could not load the L&D workspace.";
@@ -66,7 +66,7 @@ function renderLDEvents() {
 
 async function loadLDEvents() {
   const query = new URLSearchParams({ q: l$("#ld-event-search").value.trim(), type: l$("#ld-event-filter").value });
-  try { const result = await ldAPI(`/events?${query}`); ldState.searchedEvents = result.events || []; renderLDEvents(); }
+  try { const result = await ldAPI(`/events?${query}`); ldState.searchedEvents = (result.events || []).map(normalizeLDEvent); renderLDEvents(); }
   catch (error) { ldToast(error.message, true); }
 }
 
@@ -120,7 +120,7 @@ async function saveEvent(event) {
   const format = l$("#event-format").value;
   const payload = { title: l$("#event-title").value.trim(), description: l$("#event-description").value.trim(), type: l$("#event-type").value, format, duration_hours: Number(l$("#event-duration").value), mandatory: l$("#event-mandatory").checked, target_roles: roles, target_grades: grades, develops_skills: effects, prerequisites, upcoming_sessions: format === "self_paced" ? [] : l$("#event-sessions").value.split(/\s+/).filter(Boolean), learning_link: l$("#event-link").value.trim() };
   const id = l$("#event-id").value;
-  try { await ldAPI(id ? `/events/${encodeURIComponent(id)}` : "/events", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); const result = await ldAPI("/events"); ldState.events = result.events || []; closeEventForm(); renderLDWorkspace(); showLDView("events"); ldToast(id ? "Activity updated" : "Activity created"); } catch (error) { ldToast(error.message, true); }
+  try { await ldAPI(id ? `/events/${encodeURIComponent(id)}` : "/events", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); const result = await ldAPI("/events"); ldState.events = (result.events || []).map(normalizeLDEvent); ldState.searchedEvents = null; closeEventForm(); renderLDWorkspace(); showLDView("events"); ldToast(id ? "Activity updated" : "Activity created"); } catch (error) { ldToast(error.message, true); }
 }
 
 function showLDView(view) { l$$('.view').forEach((section) => section.classList.toggle("active", section.id === `ld-view-${view}`)); l$$('[data-ld-view]').forEach((button) => button.classList.toggle("active", button.dataset.ldView === view)); l$("#ld-page-context").textContent = ({ dashboard:"Dashboard",events:"Courses & Events",sessions:"Upcoming Sessions",analytics:"Course Analytics",profile:"Profile" })[view]; scrollTo({ top:0, behavior:"smooth" }); }
@@ -129,5 +129,6 @@ function ldTitle(value) { return String(value || "").replaceAll("_", " ").replac
 function ldInitials(name) { return name.split(/\s+/).slice(0,2).map((part) => part[0]).join("").toUpperCase(); }
 function ldEscape(value) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" })[char]); }
 function ldEmpty(title, text) { return `<div class="empty-state"><div><strong>${ldEscape(title)}</strong>${ldEscape(text)}</div></div>`; }
+function normalizeLDEvent(event) { return { ...event, target_roles: event.target_roles || [], target_grades: event.target_grades || [], develops_skills: event.develops_skills || [], upcoming_sessions: event.upcoming_sessions || [], prerequisites: event.prerequisites || {} }; }
 function ldDebounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }
 let ldToastTimer; function ldToast(message, error = false) { const toast = l$("#ld-toast"); toast.textContent = message; toast.classList.toggle("error", error); toast.classList.add("show"); clearTimeout(ldToastTimer); ldToastTimer = setTimeout(() => toast.classList.remove("show"), 2800); }

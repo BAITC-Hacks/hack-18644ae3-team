@@ -40,7 +40,7 @@ async function init() {
     state.employees = employeeResult.employees || [];
     state.directoryEmployees = state.employees;
     state.catalog = catalog;
-    state.events = eventResult.events || [];
+    state.events = (eventResult.events || []).map(normalizeHREvent);
     $("#snapshot-date").textContent = formatDate(health.as_of_date);
     populateEmployeeSelect();
     populateGoalRoles();
@@ -342,7 +342,7 @@ function renderHREvents() {
 
 async function loadHREvents() {
   const query = new URLSearchParams({ q: $("#hr-event-search").value.trim(), type: $("#hr-event-type").value });
-  try { const result = await api(`/events?${query}`); state.searchedEvents = result.events || []; renderHREvents(); }
+  try { const result = await api(`/events?${query}`); state.searchedEvents = (result.events || []).map(normalizeHREvent); renderHREvents(); }
   catch (error) { showToast(error.message, true); }
 }
 
@@ -651,3 +651,4 @@ function escapeHTML(value) {
 }
 
 function debounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }
+function normalizeHREvent(event) { return { ...event, target_roles: event.target_roles || [], target_grades: event.target_grades || [], develops_skills: event.develops_skills || [], upcoming_sessions: event.upcoming_sessions || [] }; }
