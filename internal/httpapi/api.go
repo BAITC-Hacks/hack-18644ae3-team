@@ -8,29 +8,46 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
+	"careerquest/internal/assessment"
 	"careerquest/internal/auth"
 	"careerquest/internal/career"
-	"careerquest/internal/dataset"
 	"careerquest/internal/domain"
 	"careerquest/internal/events"
 	"careerquest/internal/navigator"
 	"careerquest/internal/recommendation"
+	"careerquest/internal/repository"
 )
 
 type API struct {
-	store            *dataset.Store
+	store            repository.Store
 	auth             *auth.Service
 	career           *career.Service
 	events           *events.Service
 	navigatorService *navigator.Service
 	recommendation   *recommendation.Service
+	assessment       *assessment.Service
 }
 
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+func (a *API) register(w http.ResponseWriter, r *http.Request) {
+	var request auth.RegistrationInput
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user, err := a.auth.Register(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"user": user, "message": "Registration submitted for HR approval."})
 }
 
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
@@ -74,23 +91,24 @@ func roleHome(role auth.Role) string {
 	}
 }
 
-func New(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service) http.Handler {
+func New(store repository.Store, careerService *career.Service, recommendationService *recommendation.Service) http.Handler {
 	return newHandler(store, careerService, recommendationService, auth.NewDemoService(), "")
 }
 
-func NewWithFrontend(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service, webDir string) http.Handler {
+func NewWithFrontend(store repository.Store, careerService *career.Service, recommendationService *recommendation.Service, webDir string) http.Handler {
 	return newHandler(store, careerService, recommendationService, auth.NewDemoService(), webDir)
 }
 
-func NewWithAuth(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service, authService *auth.Service, webDir string) http.Handler {
+func NewWithAuth(store repository.Store, careerService *career.Service, recommendationService *recommendation.Service, authService *auth.Service, webDir string) http.Handler {
 	return newHandler(store, careerService, recommendationService, authService, webDir)
 }
 
-func newHandler(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service, authService *auth.Service, webDir string) http.Handler {
-	api := &API{store: store, auth: authService, career: careerService, events: events.New(store), navigatorService: navigator.New(store, careerService, recommendationService), recommendation: recommendationService}
+func newHandler(store repository.Store, careerService *career.Service, recommendationService *recommendation.Service, authService *auth.Service, webDir string) http.Handler {
+	api := &API{store: store, auth: authService, career: careerService, events: events.New(store), navigatorService: navigator.New(store, careerService, recommendationService), recommendation: recommendationService, assessment: assessment.New(store)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", api.health)
 	mux.HandleFunc("POST /auth/login", api.login)
+	mux.HandleFunc("POST /auth/register", api.register)
 	mux.Handle("GET /auth/me", authService.RequireAuthenticated(http.HandlerFunc(api.me)))
 	mux.Handle("POST /auth/logout", authService.RequireAuthenticated(http.HandlerFunc(api.logout)))
 
@@ -109,6 +127,10 @@ func newHandler(store *dataset.Store, careerService *career.Service, recommendat
 
 	mux.Handle("GET /catalog", authService.RequireAuthenticated(http.HandlerFunc(api.catalog)))
 	mux.Handle("GET /employees", requireHR(http.HandlerFunc(api.employees)))
+	mux.Handle("POST /employees", requireHR(http.HandlerFunc(api.createEmployee)))
+	mux.Handle("GET /registrations", requireHR(http.HandlerFunc(api.registrations)))
+	mux.Handle("POST /registrations/{id}/approve", requireHR(http.HandlerFunc(api.approveRegistration)))
+	mux.Handle("POST /registrations/{id}/reject", requireHR(http.HandlerFunc(api.rejectRegistration)))
 	mux.Handle("GET /employees/{id}", requireEmployeeAccess(http.HandlerFunc(api.employee)))
 	mux.Handle("GET /employees/{id}/career-path", requireEmployeeAccess(http.HandlerFunc(api.careerPath)))
 	mux.Handle("GET /employees/{id}/skill-gaps", requireEmployeeAccess(http.HandlerFunc(api.skillGaps)))
@@ -122,6 +144,8 @@ func newHandler(store *dataset.Store, careerService *career.Service, recommendat
 	mux.Handle("PUT /events/{id}", requireLD(http.HandlerFunc(api.updateEvent)))
 	mux.Handle("GET /events/{id}/candidates", requireHR(http.HandlerFunc(api.eventCandidates)))
 	mux.Handle("GET /events/{id}/analytics", requireHRorLD(http.HandlerFunc(api.eventAnalytics)))
+	mux.Handle("GET /events/{id}/participants", requireLD(http.HandlerFunc(api.eventParticipants)))
+	mux.Handle("POST /enrollments/{id}/assessment", requireLD(http.HandlerFunc(api.assessEnrollment)))
 	mux.Handle("POST /navigator/chat", authService.RequireAuthenticated(http.HandlerFunc(api.navigator)))
 	if webDir != "" {
 		servePage := func(name string) http.Handler {
@@ -137,6 +161,46 @@ func newHandler(store *dataset.Store, careerService *career.Service, recommendat
 	return cors(mux)
 }
 
+func (a *API) registrations(w http.ResponseWriter, r *http.Request) {
+	status := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
+	if status == "" {
+		status = "PENDING"
+	}
+	users, err := a.auth.Registrations(status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load registrations")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"registrations": users})
+}
+
+type registrationDecision struct {
+	EmployeeID string `json:"employee_id"`
+}
+
+func (a *API) approveRegistration(w http.ResponseWriter, r *http.Request) {
+	var request registrationDecision
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user, err := a.auth.DecideRegistration(r.PathValue("id"), "ACTIVE", request.EmployeeID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+func (a *API) rejectRegistration(w http.ResponseWriter, r *http.Request) {
+	user, err := a.auth.DecideRegistration(r.PathValue("id"), "REJECTED", "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
 func (a *API) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":     "ok",
@@ -149,7 +213,9 @@ func (a *API) health(w http.ResponseWriter, _ *http.Request) {
 type employeeSummary struct {
 	ID                string             `json:"employee_id"`
 	FullName          string             `json:"full_name"`
+	Email             string             `json:"email,omitempty"`
 	Department        string             `json:"department"`
+	Team              string             `json:"team,omitempty"`
 	Role              string             `json:"role"`
 	Grade             string             `json:"grade"`
 	PreferredLanguage string             `json:"preferred_language"`
@@ -182,25 +248,25 @@ func (a *API) catalog(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *API) employees(w http.ResponseWriter, r *http.Request) {
-	employees := a.store.Employees()
+	employees, err := a.store.SearchEmployees(repository.EmployeeSearch{
+		Query:      r.URL.Query().Get("q"),
+		Department: r.URL.Query().Get("department"),
+		Team:       r.URL.Query().Get("team"),
+		Role:       r.URL.Query().Get("role"),
+		Grade:      r.URL.Query().Get("grade"),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not search employees")
+		return
+	}
 	result := make([]employeeSummary, 0, len(employees))
-	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	roleFilter := r.URL.Query().Get("role")
-	gradeFilter := r.URL.Query().Get("grade")
 	for _, employee := range employees {
-		if query != "" && !strings.Contains(strings.ToLower(employee.FullName+" "+employee.ID+" "+employee.Department+" "+employee.Role), query) {
-			continue
-		}
-		if roleFilter != "" && employee.Role != roleFilter {
-			continue
-		}
-		if gradeFilter != "" && employee.Grade != gradeFilter {
-			continue
-		}
 		result = append(result, employeeSummary{
 			ID:                employee.ID,
 			FullName:          employee.FullName,
+			Email:             employee.Email,
 			Department:        employee.Department,
+			Team:              employee.Team,
 			Role:              employee.Role,
 			Grade:             employee.Grade,
 			PreferredLanguage: employee.PreferredLanguage,
@@ -208,6 +274,25 @@ func (a *API) employees(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"employees": result})
+}
+
+func (a *API) createEmployee(w http.ResponseWriter, r *http.Request) {
+	manager, ok := a.store.(repository.EmployeeManager)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "employee creation is unavailable")
+		return
+	}
+	var request repository.EmployeeCreate
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	employee, err := manager.CreateEmployee(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"employee": employee})
 }
 
 func (a *API) employee(w http.ResponseWriter, r *http.Request) {
@@ -395,8 +480,13 @@ func (a *API) event(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, event)
 }
 
-func (a *API) listEvents(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"events": a.store.Events()})
+func (a *API) listEvents(w http.ResponseWriter, r *http.Request) {
+	events, err := a.store.SearchEvents(repository.EventSearch{Query: r.URL.Query().Get("q"), Type: r.URL.Query().Get("type"), Role: r.URL.Query().Get("role"), Grade: r.URL.Query().Get("grade")})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not search activities")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
 func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
@@ -450,6 +540,35 @@ func (a *API) eventAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, analytics)
+}
+
+func (a *API) eventParticipants(w http.ResponseWriter, r *http.Request) {
+	participants, err := a.assessment.Participants(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load participants")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"participants": participants})
+}
+
+func (a *API) assessEnrollment(w http.ResponseWriter, r *http.Request) {
+	enrollmentID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || enrollmentID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid enrollment id")
+		return
+	}
+	var request repository.AssessmentInput
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user, _ := auth.UserFromContext(r.Context())
+	result, err := a.assessment.Assess(enrollmentID, user.ID, request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"assessment": result})
 }
 
 type navigatorRequest struct {

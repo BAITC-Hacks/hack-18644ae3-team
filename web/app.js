@@ -1,6 +1,8 @@
 const state = {
   user: null,
   employees: [],
+  directoryEmployees: [],
+  registrations: null,
   catalog: null,
   events: [],
   profile: null,
@@ -28,6 +30,7 @@ async function init() {
       return;
     }
     state.user = session.user;
+    loadRegistrations();
     const [health, employeeResult, catalog, eventResult] = await Promise.all([
       api("/health"),
       api("/employees"),
@@ -35,22 +38,28 @@ async function init() {
       api("/events"),
     ]);
     state.employees = employeeResult.employees || [];
+    state.directoryEmployees = state.employees;
     state.catalog = catalog;
     state.events = eventResult.events || [];
     $("#snapshot-date").textContent = formatDate(health.as_of_date);
     populateEmployeeSelect();
     populateGoalRoles();
     populateHRFilters();
+    if (state.registrations !== null) renderRegistrations();
+    showView(location.hash.slice(1) || "overview", false);
     const remembered = localStorage.getItem("careerQuestEmployee");
     const firstID = state.employees.some((employee) => employee.employee_id === remembered)
       ? remembered
       : (state.employees.find((employee) => employee.employee_id === "E0001")?.employee_id || state.employees[0]?.employee_id);
-    if (!firstID) throw new Error("The dataset contains no employees.");
-    $("#employee-select").value = firstID;
-    await loadEmployee(firstID);
+    if (firstID) {
+      $("#employee-select").value = firstID;
+      await loadEmployee(firstID);
+    }
   } catch (error) {
     showToast(error.message, true);
     $("#loading-screen p").textContent = "Could not load Career Quest.";
+  } finally {
+    setLoading(false);
   }
 }
 
@@ -64,19 +73,35 @@ function bindNavigation() {
   });
   window.addEventListener("hashchange", () => {
     const view = location.hash.slice(1);
-    if (["overview", "quests", "skills", "navigator"].includes(view)) showView(view, false);
+    if ($(`#view-${view}`)) showView(view, false);
   });
 }
 
 function bindActions() {
   $("#employee-select").addEventListener("change", (event) => loadEmployee(event.target.value));
-  $("#refresh-button").addEventListener("click", () => loadEmployee(state.profile.employee.employee_id, true));
+  $("#refresh-button").addEventListener("click", () => {
+    if (state.activeView === "registrations") return loadRegistrations();
+    if (state.profile) loadEmployee(state.profile.employee.employee_id, true);
+  });
+  $("#refresh-registrations").addEventListener("click", loadRegistrations);
+  window.addEventListener("focus", () => {
+    if (state.user && state.activeView === "registrations") loadRegistrations();
+  });
   $("#quest-format-filter").addEventListener("change", renderQuestBoard);
-  $("#employee-search").addEventListener("input", renderEmployeeDirectory);
-  $("#employee-role-filter").addEventListener("change", renderEmployeeDirectory);
-  $("#employee-grade-filter").addEventListener("change", renderEmployeeDirectory);
-  $("#hr-event-search").addEventListener("input", renderHREvents);
-  $("#hr-event-type").addEventListener("change", renderHREvents);
+  const searchEmployees = debounce(loadEmployeeDirectory, 250);
+  $("#employee-search").addEventListener("input", searchEmployees);
+  $("#employee-department-filter").addEventListener("input", searchEmployees);
+  $("#employee-team-filter").addEventListener("input", searchEmployees);
+  $("#employee-role-filter").addEventListener("change", loadEmployeeDirectory);
+  $("#employee-grade-filter").addEventListener("change", loadEmployeeDirectory);
+  const searchEvents = debounce(loadHREvents, 250);
+  $("#hr-event-search").addEventListener("input", searchEvents);
+  $("#hr-event-type").addEventListener("change", loadHREvents);
+  $("#open-employee-create").addEventListener("click", () => $("#employee-dialog").showModal());
+  $("#close-employee-dialog").addEventListener("click", () => $("#employee-dialog").close());
+  $("#cancel-employee-create").addEventListener("click", () => $("#employee-dialog").close());
+  $("#employee-form").addEventListener("submit", createEmployee);
+  $("#registration-table").addEventListener("click", handleRegistrationDecision);
   $("#employee-table").addEventListener("click", (event) => {
     const button = event.target.closest("[data-open-employee]");
     if (!button) return;
@@ -282,16 +307,12 @@ function populateHRFilters() {
   $("#employee-grade-filter").innerHTML += state.catalog.grades.map((grade) => `<option>${escapeHTML(grade)}</option>`).join("");
   const types = [...new Set(state.events.map((event) => event.type))].sort();
   $("#hr-event-type").innerHTML += types.map((type) => `<option value="${escapeHTML(type)}">${escapeHTML(titleCase(type))}</option>`).join("");
+  $("#new-employee-role").innerHTML = state.catalog.roles.map((role) => `<option>${escapeHTML(role)}</option>`).join("");
+  $("#new-employee-grade").innerHTML = state.catalog.grades.map((grade) => `<option>${escapeHTML(grade)}</option>`).join("");
 }
 
 function renderEmployeeDirectory() {
-  const query = $("#employee-search").value.trim().toLowerCase();
-  const role = $("#employee-role-filter").value;
-  const grade = $("#employee-grade-filter").value;
-  const employees = state.employees.filter((employee) => {
-    const searchable = `${employee.full_name} ${employee.employee_id} ${employee.department} ${employee.role}`.toLowerCase();
-    return (!query || searchable.includes(query)) && (!role || employee.role === role) && (!grade || employee.grade === grade);
-  });
+  const employees = state.directoryEmployees;
   $("#employee-table").innerHTML = employees.length ? employees.map((employee) => `
     <tr>
       <td><div class="table-person"><span>${escapeHTML(initials(employee.full_name))}</span><div><strong>${escapeHTML(employee.full_name)}</strong><small>${escapeHTML(employee.employee_id)}</small></div></div></td>
@@ -301,18 +322,74 @@ function renderEmployeeDirectory() {
     </tr>`).join("") : `<tr><td colspan="6">${emptyState("No employees found", "Try changing the directory filters.")}</td></tr>`;
 }
 
+async function loadEmployeeDirectory() {
+  const query = new URLSearchParams({ q: $("#employee-search").value.trim(), department: $("#employee-department-filter").value.trim(), team: $("#employee-team-filter").value.trim(), role: $("#employee-role-filter").value, grade: $("#employee-grade-filter").value });
+  try { const result = await api(`/employees?${query}`); state.directoryEmployees = result.employees || []; renderEmployeeDirectory(); }
+  catch (error) { showToast(error.message, true); }
+}
+
 function renderHREvents() {
-  const query = $("#hr-event-search").value.trim().toLowerCase();
-  const type = $("#hr-event-type").value;
-  const events = state.events.filter((event) => (!query || `${event.title} ${event.description}`.toLowerCase().includes(query)) && (!type || event.type === type));
+  const events = state.searchedEvents || state.events;
   $("#hr-event-grid").innerHTML = events.length ? events.map((event) => `
     <article class="panel catalog-card">
       <div class="quest-top"><span class="quest-type">${escapeHTML(titleCase(event.type))}</span><span class="${event.mandatory ? "mandatory-badge" : "optional-badge"}">${event.mandatory ? "Mandatory" : "Optional"}</span></div>
       <h3>${escapeHTML(event.title)}</h3><p>${escapeHTML(event.description)}</p>
-      <div class="skill-tags">${event.develops_skills.slice(0, 3).map((skill) => `<span class="skill-tag">${escapeHTML(skill.skill_id.replace("SK_", "").replaceAll("_", " "))} +${skill.gain}</span>`).join("")}</div>
+      <div class="skill-tags">${(event.develops_skills || []).slice(0, 3).map((skill) => `<span class="skill-tag">${escapeHTML(skill.skill_id.replace("SK_", "").replaceAll("_", " "))} +${skill.gain}</span>`).join("")}</div>
       <div class="quest-meta"><span>◷ ${formatHours(event.duration_hours)}</span><span>${escapeHTML(titleCase(event.format))}</span></div>
       <button class="button secondary full-button" data-event-candidates="${escapeHTML(event.event_id)}">View best candidates</button>
     </article>`).join("") : emptyState("No events found", "Try changing the catalog filters.");
+}
+
+async function loadHREvents() {
+  const query = new URLSearchParams({ q: $("#hr-event-search").value.trim(), type: $("#hr-event-type").value });
+  try { const result = await api(`/events?${query}`); state.searchedEvents = result.events || []; renderHREvents(); }
+  catch (error) { showToast(error.message, true); }
+}
+
+let registrationsRequest = 0;
+async function loadRegistrations() {
+  const request = ++registrationsRequest;
+  const refresh = $("#refresh-registrations");
+  refresh.disabled = true;
+  $("#registration-table").innerHTML = '<tr><td colspan="5" role="status">Loading registration requests...</td></tr>';
+  try {
+    const result = await api("/registrations", { cache: "no-store" });
+    if (request !== registrationsRequest) return;
+    state.registrations = result.registrations || [];
+    renderRegistrations();
+  } catch (error) {
+    if (request !== registrationsRequest) return;
+    state.registrations = null;
+    $("#registration-nav-count").textContent = "!";
+    $("#registration-table").innerHTML = `<tr><td colspan="5" role="alert">Could not load registration requests: ${escapeHTML(error.message)}. Use Refresh to try again.</td></tr>`;
+  } finally {
+    if (request === registrationsRequest) refresh.disabled = false;
+  }
+}
+
+function renderRegistrations() {
+  if (state.registrations === null) return;
+  $("#registration-nav-count").textContent = state.registrations.length;
+  $("#registration-table").innerHTML = state.registrations.length ? state.registrations.map((registration) => `<tr><td><strong>${escapeHTML(registration.name)}</strong></td><td>${escapeHTML(registration.email)}</td><td><small>Requested ID: ${escapeHTML(registration.requested_employee_id || "Not provided")}</small><select aria-label="Employee to link on approval" data-registration-employee="${escapeHTML(registration.id)}"><option value="">Choose employee</option>${state.employees.map((employee) => `<option value="${escapeHTML(employee.employee_id)}" ${employee.employee_id === registration.requested_employee_id ? "selected" : ""}>${escapeHTML(employee.full_name)} (${escapeHTML(employee.employee_id)})</option>`).join("")}</select></td><td><span class="grade-badge">${escapeHTML(registration.status)}</span></td><td><button class="table-action" data-approve-registration="${escapeHTML(registration.id)}">Approve</button> <button class="table-action danger-text" data-reject-registration="${escapeHTML(registration.id)}">Reject</button></td></tr>`).join("") : `<tr><td colspan="5">${emptyState("No pending registrations", "New account requests will appear here.")}</td></tr>`;
+}
+
+async function handleRegistrationDecision(event) {
+  const approve = event.target.closest("[data-approve-registration]");
+  const reject = event.target.closest("[data-reject-registration]");
+  if (!approve && !reject) return;
+  const id = approve?.dataset.approveRegistration || reject.dataset.rejectRegistration;
+  try {
+    const options = { method: "POST", body: reject ? "{}" : JSON.stringify({ employee_id: $(`[data-registration-employee="${CSS.escape(id)}"]`).value }) };
+    await api(`/registrations/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, options);
+    await loadRegistrations(); showToast(approve ? "Account approved" : "Registration rejected");
+  } catch (error) { showToast(error.message, true); }
+}
+
+async function createEmployee(event) {
+  event.preventDefault();
+  const payload = { employee_id: $("#new-employee-id").value.trim(), full_name: $("#new-employee-name").value.trim(), email: $("#new-employee-email").value.trim(), phone: $("#new-employee-phone").value.trim(), department: $("#new-employee-department").value.trim(), team: $("#new-employee-team").value.trim(), location: $("#new-employee-location").value.trim(), role: $("#new-employee-role").value, grade: $("#new-employee-grade").value };
+  try { await api("/employees", { method: "POST", body: JSON.stringify(payload) }); const result = await api("/employees"); state.employees = result.employees || []; state.directoryEmployees = state.employees; populateEmployeeSelect(); renderEmployeeDirectory(); renderRegistrations(); event.currentTarget.reset(); $("#employee-dialog").close(); showToast("Employee created"); }
+  catch (error) { showToast(error.message, true); }
 }
 
 function renderHRAnalytics() {
@@ -492,6 +569,7 @@ function showView(view, updateHash = true) {
   $$(".view").forEach((section) => section.classList.toggle("active", section.id === `view-${view}`));
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   if (updateHash) history.replaceState(null, "", `#${view}`);
+  if (view === "registrations" && state.user) loadRegistrations();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -571,3 +649,5 @@ function escapeHTML(value) {
     '"': "&quot;",
   })[character]);
 }
+
+function debounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }

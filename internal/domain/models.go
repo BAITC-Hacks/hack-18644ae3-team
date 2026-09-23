@@ -30,10 +30,15 @@ type CareerGoal struct {
 type Employee struct {
 	ID                string         `json:"employee_id"`
 	FullName          string         `json:"full_name"`
+	Email             string         `json:"email,omitempty"`
+	Phone             string         `json:"phone,omitempty"`
 	Department        string         `json:"department"`
+	Team              string         `json:"team,omitempty"`
+	Location          string         `json:"location,omitempty"`
 	Role              string         `json:"role"`
 	Grade             string         `json:"grade"`
 	ManagerID         *string        `json:"manager_id"`
+	ManagerName       string         `json:"manager_name,omitempty"`
 	HireDate          string         `json:"hire_date"`
 	TenureMonths      int            `json:"tenure_months"`
 	WorkFormat        string         `json:"work_format"`
@@ -66,6 +71,7 @@ type Event struct {
 }
 
 type Activity struct {
+	EnrollmentID  int64  `json:"enrollment_id,omitempty"`
 	RecordID      string `json:"record_id"`
 	EmployeeID    string `json:"employee_id"`
 	EventID       string `json:"event_id"`

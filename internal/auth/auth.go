@@ -3,14 +3,15 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Role string
@@ -24,16 +25,32 @@ const (
 const sessionCookie = "cq_session"
 
 type User struct {
-	ID         string `json:"id"`
-	Email      string `json:"email"`
-	Name       string `json:"name"`
-	Role       Role   `json:"role"`
-	EmployeeID string `json:"employee_id,omitempty"`
+	ID                  string `json:"id"`
+	Email               string `json:"email"`
+	Name                string `json:"name"`
+	Role                Role   `json:"role"`
+	EmployeeID          string `json:"employee_id,omitempty"`
+	RequestedEmployeeID string `json:"requested_employee_id,omitempty"`
+	Status              string `json:"status"`
 }
 
 type credential struct {
 	user         User
-	passwordHash [sha256.Size]byte
+	passwordHash string
+}
+
+type RegistrationInput struct {
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	EmployeeID string `json:"employee_id,omitempty"`
+}
+
+type AccountRepository interface {
+	FindAccountByEmail(email string) (User, string, error)
+	CreatePendingAccount(input RegistrationInput, passwordHash string) (User, error)
+	ListRegistrations(status string) ([]User, error)
+	UpdateRegistration(userID, status, employeeID string) (User, error)
 }
 
 type session struct {
@@ -44,6 +61,7 @@ type session struct {
 type Service struct {
 	mu          sync.RWMutex
 	credentials map[string]credential
+	accounts    AccountRepository
 	sessions    map[string]session
 	now         func() time.Time
 }
@@ -60,23 +78,79 @@ func NewDemoService() *Service {
 	return s
 }
 
+func NewService(accounts AccountRepository) *Service {
+	return &Service{accounts: accounts, sessions: make(map[string]session), now: time.Now}
+}
+
 func (s *Service) addDemoUser(user User, password string) {
 	key := strings.ToLower(strings.TrimSpace(user.Email))
-	s.credentials[key] = credential{user: user, passwordHash: sha256.Sum256([]byte(password))}
+	user.Status = "ACTIVE"
+	hash, _ := HashPassword(password)
+	s.credentials[key] = credential{user: user, passwordHash: hash}
 }
 
 func (s *Service) Authenticate(email, password string) (User, bool) {
-	credential, ok := s.credentials[strings.ToLower(strings.TrimSpace(email))]
-	if !ok {
-		// Keep roughly the same hashing work for unknown and known accounts.
-		_ = sha256.Sum256([]byte(password))
+	var user User
+	var passwordHash string
+	if s.accounts != nil {
+		var err error
+		user, passwordHash, err = s.accounts.FindAccountByEmail(strings.ToLower(strings.TrimSpace(email)))
+		if err != nil {
+			return User{}, false
+		}
+	} else {
+		credential, ok := s.credentials[strings.ToLower(strings.TrimSpace(email))]
+		if !ok {
+			return User{}, false
+		}
+		user, passwordHash = credential.user, credential.passwordHash
+	}
+	if user.Status != "ACTIVE" || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil {
 		return User{}, false
 	}
-	candidate := sha256.Sum256([]byte(password))
-	if subtle.ConstantTimeCompare(candidate[:], credential.passwordHash[:]) != 1 {
-		return User{}, false
+	return user, true
+}
+
+func HashPassword(password string) (string, error) {
+	if len(password) < 8 && password != "demo" {
+		return "", errors.New("password must be at least 8 characters")
 	}
-	return credential.user, true
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
+func (s *Service) Register(input RegistrationInput) (User, error) {
+	if s.accounts == nil {
+		return User{}, errors.New("registration is unavailable")
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
+	input.EmployeeID = strings.TrimSpace(input.EmployeeID)
+	if input.Name == "" || input.Email == "" {
+		return User{}, errors.New("name and email are required")
+	}
+	hash, err := HashPassword(input.Password)
+	if err != nil {
+		return User{}, err
+	}
+	return s.accounts.CreatePendingAccount(input, hash)
+}
+
+func (s *Service) Registrations(status string) ([]User, error) {
+	if s.accounts == nil {
+		return []User{}, nil
+	}
+	return s.accounts.ListRegistrations(status)
+}
+
+func (s *Service) DecideRegistration(userID, status, employeeID string) (User, error) {
+	if s.accounts == nil {
+		return User{}, errors.New("registration management is unavailable")
+	}
+	if status != "ACTIVE" && status != "REJECTED" {
+		return User{}, errors.New("status must be ACTIVE or REJECTED")
+	}
+	return s.accounts.UpdateRegistration(userID, status, strings.TrimSpace(employeeID))
 }
 
 func (s *Service) StartSession(w http.ResponseWriter, r *http.Request, user User) error {

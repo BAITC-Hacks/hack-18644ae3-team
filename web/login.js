@@ -43,4 +43,44 @@ document.addEventListener("DOMContentLoaded", async () => {
       submit.innerHTML = "Sign in <span>→</span>";
     }
   });
+
+  const loginForm = document.querySelector("#login-form");
+  const registrationForm = document.querySelector("#registration-form");
+  document.querySelector("#show-registration").addEventListener("click", () => {
+    loginForm.hidden = true;
+    document.querySelector("#show-registration").hidden = true;
+    registrationForm.hidden = false;
+  });
+  document.querySelector("#show-login").addEventListener("click", () => {
+    registrationForm.hidden = true;
+    loginForm.hidden = false;
+    document.querySelector("#show-registration").hidden = false;
+  });
+  registrationForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    const message = document.querySelector("#registration-message");
+    submit.disabled = true;
+    message.textContent = "";
+    try {
+      const response = await fetch("/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: document.querySelector("#registration-name").value,
+          email: document.querySelector("#registration-email").value,
+          employee_id: document.querySelector("#registration-employee").value.trim(),
+          password: document.querySelector("#registration-password").value,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Registration failed");
+      message.textContent = data.message;
+      registrationForm.reset();
+    } catch (requestError) {
+      message.textContent = requestError.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
 });

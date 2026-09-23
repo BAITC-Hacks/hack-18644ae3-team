@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"sort"
 
-	"careerquest/internal/dataset"
 	"careerquest/internal/domain"
+	"careerquest/internal/repository"
 )
 
 type Service struct {
-	store *dataset.Store
+	store repository.Store
 }
 
-func New(store *dataset.Store) *Service { return &Service{store: store} }
+func New(store repository.Store) *Service { return &Service{store: store} }
 
 type ActivityView struct {
 	RecordID      string  `json:"record_id"`

@@ -26,9 +26,13 @@ function bindLDUI() {
   l$("#add-effect").addEventListener("click", () => addEffectRow());
   l$("#add-prerequisite").addEventListener("click", () => addPrerequisiteRow());
   l$("#event-effects").addEventListener("click", removeMetadataRow); l$("#event-prerequisites").addEventListener("click", removeMetadataRow);
-  l$("#ld-event-search").addEventListener("input", renderLDEvents); l$("#ld-event-filter").addEventListener("change", renderLDEvents);
-  l$("#ld-event-table").addEventListener("click", (event) => { const edit = event.target.closest("[data-edit-event]"); if (edit) openEventForm(edit.dataset.editEvent); });
-  l$("#ld-analytics-event").addEventListener("change", renderEventAnalytics);
+  const searchEvents = ldDebounce(loadLDEvents, 250);
+  l$("#ld-event-search").addEventListener("input", searchEvents); l$("#ld-event-filter").addEventListener("change", loadLDEvents);
+  l$("#ld-event-table").addEventListener("click", (event) => { const edit = event.target.closest("[data-edit-event]"); if (edit) openEventForm(edit.dataset.editEvent); const participants = event.target.closest("[data-event-participants]"); if (participants) { l$("#ld-analytics-event").value = participants.dataset.eventParticipants; showLDView("analytics"); renderAssessments(); } });
+  l$("#ld-analytics-event").addEventListener("change", renderAssessments);
+  l$("#ld-analytics-content").addEventListener("click", openAssessment);
+  l$("#assessment-close").addEventListener("click", closeAssessment); l$("#assessment-cancel").addEventListener("click", closeAssessment);
+  l$("#assessment-form").addEventListener("submit", saveAssessment);
   l$("#ld-logout").addEventListener("click", async () => { await ldAPI("/auth/logout", { method: "POST", body: "{}" }); location.replace("/"); });
 }
 
@@ -56,18 +60,37 @@ function renderLDMetrics() {
 }
 
 function renderLDEvents() {
-  const query = l$("#ld-event-search").value.trim().toLowerCase(), type = l$("#ld-event-filter").value;
-  const skillNames = Object.fromEntries(ldState.catalog.skills.map((skill) => [skill.skill_id, skill.name]));
-  const events = ldState.events.filter((event) => (!query || `${event.title} ${event.description} ${event.develops_skills.map((effect) => skillNames[effect.skill_id]).join(" ")}`.toLowerCase().includes(query)) && (!type || event.type === type));
+  const events = ldState.searchedEvents || ldState.events;
   l$("#ld-event-table").innerHTML = events.length ? events.map((event) => `<tr><td><div class="event-table-title"><strong>${ldEscape(event.title)}</strong><small>${event.mandatory ? "Mandatory" : "Optional"} · ${event.develops_skills.length} skills${event.learning_link ? " · Link ready" : ""}</small></div></td><td>${ldEscape(ldTitle(event.type))}<br><span class="muted">${ldEscape(ldTitle(event.format))}</span></td><td>${event.target_roles.length} roles<br><span class="muted">${event.target_grades.map(ldEscape).join(", ")}</span></td><td>${event.duration_hours}h</td><td>${event.upcoming_sessions.length || (event.format === "self_paced" ? "Anytime" : "—")}</td><td><button class="table-action" data-edit-event="${ldEscape(event.event_id)}">Edit →</button></td></tr>`).join("") : `<tr><td colspan="6">${ldEmpty("No activities found", "Change your search or create a new activity.")}</td></tr>`;
+}
+
+async function loadLDEvents() {
+  const query = new URLSearchParams({ q: l$("#ld-event-search").value.trim(), type: l$("#ld-event-filter").value });
+  try { const result = await ldAPI(`/events?${query}`); ldState.searchedEvents = result.events || []; renderLDEvents(); }
+  catch (error) { ldToast(error.message, true); }
 }
 
 function renderLDSessions() { const sessions = allSessions(); l$("#ld-session-list").innerHTML = sessions.length ? sessions.map((session) => `<div class="panel session-card"><div class="session-date"><strong>${new Date(session.date + "T00:00:00Z").getUTCDate()}</strong><span>${new Date(session.date + "T00:00:00Z").toLocaleString("en", { month: "short", timeZone: "UTC" })}</span></div><div><span class="eyebrow">${ldEscape(ldTitle(session.event.type))}</span><h3>${ldEscape(session.event.title)}</h3><p>${ldEscape(session.event.target_roles.join(", "))} · ${session.event.duration_hours} hours</p></div><span class="grade-badge">${ldEscape(ldTitle(session.event.format))}</span></div>`).join("") : ldEmpty("No upcoming sessions", "Self-paced activities remain available anytime."); }
 function allSessions() { return ldState.events.flatMap((event) => event.upcoming_sessions.map((date) => ({ date, event }))).sort((a,b) => a.date.localeCompare(b.date)); }
 function sessionRow(session) { return `<div class="mandatory-item"><div class="session-mini-date">${session.date.slice(5)}</div><div><strong>${ldEscape(session.event.title)}</strong><span>${ldEscape(ldTitle(session.event.format))} · ${session.event.duration_hours}h</span></div></div>`; }
 
-function renderLDAnalyticsSelector() { l$("#ld-analytics-event").innerHTML = ldState.events.map((event) => `<option value="${ldEscape(event.event_id)}">${ldEscape(event.title)}</option>`).join(""); if (ldState.events.length) renderEventAnalytics(); }
+function renderLDAnalyticsSelector() { l$("#ld-analytics-event").innerHTML = ldState.events.map((event) => `<option value="${ldEscape(event.event_id)}">${ldEscape(event.title)}</option>`).join(""); if (ldState.events.length) renderAssessments(); }
 async function renderEventAnalytics() { const id = l$("#ld-analytics-event").value; if (!id) return; l$("#ld-analytics-content").innerHTML = `<div class="empty-state">Loading analytics…</div>`; try { const data = await ldAPI(`/events/${encodeURIComponent(id)}/analytics`); const statuses = Object.entries(data.status_counts || {}); l$("#ld-analytics-content").innerHTML = `<div class="analytics-grid"><div class="panel metric-card"><strong>${data.unique_participants}</strong><span>Participants</span></div><div class="panel metric-card"><strong>${data.total_records}</strong><span>Activity records</span></div><div class="panel metric-card"><strong>${Math.round(data.average_completion_pct)}%</strong><span>Average completion</span></div><div class="panel metric-card"><strong>${data.status_counts.completed || 0}</strong><span>Completions</span></div></div><div class="panel chart-panel"><div class="panel-title"><div><h2>Status distribution</h2><p>${ldEscape(data.title)}</p></div></div>${statuses.map(([status,count]) => `<div class="chart-row"><span>${ldEscape(ldTitle(status))}</span><div><i style="width:${count / Math.max(...statuses.map(([,value]) => value),1)*100}%"></i></div><strong>${count}</strong></div>`).join("")}</div>`; } catch (error) { l$("#ld-analytics-content").innerHTML = ldEmpty("Could not load analytics", error.message); } }
+
+async function renderAssessments() {
+  const id = l$("#ld-analytics-event").value;
+  if (!id) return;
+  l$("#ld-analytics-content").innerHTML = `<div class="empty-state">Loading analytics...</div>`;
+  try {
+    const [data, participantResult] = await Promise.all([ldAPI(`/events/${encodeURIComponent(id)}/analytics`), ldAPI(`/events/${encodeURIComponent(id)}/participants`)]);
+    const participants = participantResult.participants || [];
+    l$("#ld-analytics-content").innerHTML = `<div class="analytics-grid"><div class="panel metric-card"><strong>${data.unique_participants}</strong><span>Participants</span></div><div class="panel metric-card"><strong>${data.total_records}</strong><span>Activity records</span></div><div class="panel metric-card"><strong>${Math.round(data.average_completion_pct)}%</strong><span>Average completion</span></div><div class="panel metric-card"><strong>${data.status_counts.completed || 0}</strong><span>Completions</span></div></div><div class="panel directory-panel"><div class="panel-title"><div><h2>Participants &amp; assessments</h2><p>A pass awards configured skills once.</p></div></div><table class="data-table"><thead><tr><th>Employee</th><th>Status</th><th>Result</th><th>Score</th><th></th></tr></thead><tbody>${participants.length ? participants.map((participant) => `<tr><td><strong>${ldEscape(participant.full_name)}</strong><br><span class="muted">${ldEscape(participant.employee_id)}</span></td><td>${ldEscape(ldTitle(participant.status))}</td><td>${ldEscape(participant.result || "Not assessed")}</td><td>${participant.score ?? "-"}</td><td><button class="table-action" data-assess-enrollment="${participant.enrollment_id}" data-participant-name="${ldEscape(participant.full_name)}">Assess</button></td></tr>`).join("") : `<tr><td colspan="5">No enrolled participants.</td></tr>`}</tbody></table></div>`;
+  } catch (error) { l$("#ld-analytics-content").innerHTML = ldEmpty("Could not load analytics", error.message); }
+}
+
+function openAssessment(event) { const button = event.target.closest("[data-assess-enrollment]"); if (!button) return; l$("#assessment-form").reset(); l$("#assessment-enrollment").value = button.dataset.assessEnrollment; l$("#assessment-participant").textContent = button.dataset.participantName; l$("#assessment-dialog").showModal(); }
+function closeAssessment() { l$("#assessment-dialog").close(); }
+async function saveAssessment(event) { event.preventDefault(); const scoreValue = l$("#assessment-score").value; const payload = { result: l$("#assessment-result").value, score: scoreValue === "" ? null : Number(scoreValue), feedback: l$("#assessment-feedback").value.trim() }; try { await ldAPI(`/enrollments/${encodeURIComponent(l$("#assessment-enrollment").value)}/assessment`, { method: "POST", body: JSON.stringify(payload) }); closeAssessment(); await renderAssessments(); ldToast(payload.result === "PASSED" ? "Assessment saved and skills awarded" : "Assessment saved; no skills awarded"); } catch (error) { ldToast(error.message, true); } }
 
 function openEventForm(eventID = "") {
   l$("#event-form").reset(); l$("#event-id").value = eventID; l$("#event-effects").innerHTML = ""; l$("#event-prerequisites").innerHTML = "";
@@ -106,4 +129,5 @@ function ldTitle(value) { return String(value || "").replaceAll("_", " ").replac
 function ldInitials(name) { return name.split(/\s+/).slice(0,2).map((part) => part[0]).join("").toUpperCase(); }
 function ldEscape(value) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" })[char]); }
 function ldEmpty(title, text) { return `<div class="empty-state"><div><strong>${ldEscape(title)}</strong>${ldEscape(text)}</div></div>`; }
+function ldDebounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }
 let ldToastTimer; function ldToast(message, error = false) { const toast = l$("#ld-toast"); toast.textContent = message; toast.classList.toggle("error", error); toast.classList.add("show"); clearTimeout(ldToastTimer); ldToastTimer = setTimeout(() => toast.classList.remove("show"), 2800); }

@@ -5,17 +5,17 @@ import (
 	"strings"
 
 	"careerquest/internal/career"
-	"careerquest/internal/dataset"
 	"careerquest/internal/recommendation"
+	"careerquest/internal/repository"
 )
 
 type Service struct {
-	store          *dataset.Store
+	store          repository.Store
 	career         *career.Service
 	recommendation *recommendation.Service
 }
 
-func New(store *dataset.Store, careerService *career.Service, recommendationService *recommendation.Service) *Service {
+func New(store repository.Store, careerService *career.Service, recommendationService *recommendation.Service) *Service {
 	return &Service{store: store, career: careerService, recommendation: recommendationService}
 }
 

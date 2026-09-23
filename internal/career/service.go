@@ -5,15 +5,15 @@ import (
 	"math"
 	"sort"
 
-	"careerquest/internal/dataset"
 	"careerquest/internal/domain"
+	"careerquest/internal/repository"
 )
 
 type Service struct {
-	store *dataset.Store
+	store repository.Store
 }
 
-func New(store *dataset.Store) *Service {
+func New(store repository.Store) *Service {
 	return &Service{store: store}
 }
 

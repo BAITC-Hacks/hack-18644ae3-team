@@ -39,6 +39,7 @@ function bindEmployeeUI() {
     e$$('[data-quest-tab]').forEach((button) => button.classList.toggle("active", button === tab));
     renderMyQuests();
   });
+  e$("#employee-course-search").addEventListener("input", employeeDebounce(searchEmployeeCourses, 250));
   e$("#employee-chat-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const input = e$("#employee-chat-input");
@@ -121,6 +122,16 @@ function renderMyQuests() {
   e$("#employee-quest-list").innerHTML = latest.length ? latest.map(employeeActivityCard).join("") : employeeEmpty(`No ${employeeTitle(employeeState.questTab)} activities`, "Nothing is recorded in this section yet.");
 }
 
+async function searchEmployeeCourses() {
+  const query = e$("#employee-course-search").value.trim();
+  if (!query) { e$("#employee-course-results").innerHTML = ""; return; }
+  try {
+    const result = await employeeAPI(`/events?q=${encodeURIComponent(query)}`);
+    const events = result.events || [];
+    e$("#employee-course-results").innerHTML = events.length ? `<div class="quest-board">${events.map((event) => `<article class="quest-card"><div class="quest-top"><span class="quest-type">${employeeEscape(employeeTitle(event.type))}</span><span class="grade-badge">${event.mandatory ? "Mandatory" : "Optional"}</span></div><h3>${employeeEscape(event.title)}</h3><p>${employeeEscape(event.description)}</p><div class="quest-meta"><span>${event.duration_hours}h</span><span>${employeeEscape(employeeTitle(event.format))}</span></div>${event.learning_link ? `<a class="button primary" href="${employeeEscape(event.learning_link)}" target="_blank" rel="noopener noreferrer">Open training</a>` : ""}</article>`).join("")}</div>` : employeeEmpty("No courses found", "Try a different title, skill, role or grade.");
+  } catch (error) { employeeToast(error.message, true); }
+}
+
 function employeeQuestCard(quest, featured = false) {
   const link = quest.learning_link ? `<a class="button primary" href="${employeeEscape(quest.learning_link)}" target="_blank" rel="noopener noreferrer">Open training ↗</a>` : `<span class="link-pending">Training link not added yet</span>`;
   return `<article class="quest-card ${featured ? "featured-quest" : ""}"><div class="quest-top"><span class="quest-type">${employeeEscape(employeeTitle(quest.type))}</span><span class="score-pill">${quest.match_score} match</span></div><h3>${employeeEscape(quest.title)}</h3><p>${employeeEscape(quest.explanation)}</p><div class="skill-tags">${quest.skills_covered.map((skill) => `<span class="skill-tag ${skill.critical ? "critical" : ""}">${employeeEscape(skill.skill_name)} ${skill.before_level}→${skill.projected_level}</span>`).join("")}</div><div class="quest-meta"><span>◷ ${quest.duration_hours}h</span>${quest.readiness_impact == null ? "" : `<span class="quest-impact">+${quest.readiness_impact}% ready</span>`}</div><div class="card-actions">${link}<button class="button secondary" data-employee-explain="${employeeEscape(quest.event_id)}">Why this quest?</button></div></article>`;
@@ -168,6 +179,7 @@ async function askEmployeeNavigator(question, eventID) {
 function renderEmployeeProfile() {
   const person = employeeState.profile.employee, goal = person.career_goal;
   e$("#employee-profile-card").innerHTML = `<div class="large-avatar">${employeeEscape(employeeInitials(person.full_name))}</div><h2>${employeeEscape(person.full_name)}</h2><p>${employeeEscape(person.role)} · ${employeeEscape(person.grade)}</p><dl><div><dt>Department</dt><dd>${employeeEscape(person.department)}</dd></div><div><dt>Work format</dt><dd>${employeeEscape(employeeTitle(person.work_format))}</dd></div><div><dt>Career goal</dt><dd>${goal ? `${employeeEscape(goal.target_role)} · ${employeeEscape(goal.target_grade)}` : "Not set"}</dd></div><div><dt>Last skill review</dt><dd>${employeeEscape(person.last_review_date)}</dd></div></dl>`;
+  e$("#employee-profile-card dl").insertAdjacentHTML("beforeend", `<div><dt>Email</dt><dd>${employeeEscape(person.email || "")}</dd></div><div><dt>Phone</dt><dd>${employeeEscape(person.phone || "")}</dd></div><div><dt>Team</dt><dd>${employeeEscape(person.team || "")}</dd></div><div><dt>Manager</dt><dd>${employeeEscape(person.manager_name || "")}</dd></div><div><dt>Location</dt><dd>${employeeEscape(person.location || "")}</dd></div>`);
   const skillNames = Object.fromEntries(employeeState.catalog.skills.map((skill) => [skill.skill_id, skill.name]));
   e$("#employee-all-skills").innerHTML = Object.entries(employeeState.profile.effective_skills).sort((a, b) => (skillNames[a[0]] || a[0]).localeCompare(skillNames[b[0]] || b[0])).map(([id, level]) => `<div class="profile-skill-row"><span>${employeeEscape(skillNames[id] || id)}</span>${employeeLevelTrack(level, level)}<strong>${level}</strong></div>`).join("");
 }
@@ -188,4 +200,5 @@ function employeeInitials(name) { return name.split(/\s+/).slice(0,2).map((part)
 function employeeTitle(value) { return String(value || "").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase()); }
 function nextEmployeeGrade(grade) { const grades = ["Junior","Middle","Senior","Lead"]; return grades[Math.min(grades.indexOf(grade) + 1, 3)] || "Middle"; }
 function employeeEscape(value) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" })[char]); }
+function employeeDebounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }
 let employeeToastTimer; function employeeToast(message, error = false) { const toast = e$("#employee-toast"); toast.textContent = message; toast.classList.toggle("error", error); toast.classList.add("show"); clearTimeout(employeeToastTimer); employeeToastTimer = setTimeout(() => toast.classList.remove("show"), 2800); }

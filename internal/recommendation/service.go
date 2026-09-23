@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"careerquest/internal/career"
-	"careerquest/internal/dataset"
 	"careerquest/internal/domain"
+	"careerquest/internal/repository"
 )
 
 const recurringVoluntaryEventID = "EV_036"
@@ -61,11 +61,11 @@ type Candidate struct {
 }
 
 type Service struct {
-	store  *dataset.Store
+	store  repository.Store
 	career *career.Service
 }
 
-func New(store *dataset.Store, careerService *career.Service) *Service {
+func New(store repository.Store, careerService *career.Service) *Service {
 	return &Service{store: store, career: careerService}
 }
 

@@ -38,6 +38,16 @@
           <div class="login-error" id="login-error" role="alert"></div>
           <button class="button primary login-submit" type="submit">Sign in <span>→</span></button>
         </form>
+        <button class="text-button" id="show-registration" type="button">Need an account? Request access</button>
+        <form id="registration-form" hidden>
+          <label>Full name<input id="registration-name" required autocomplete="name"></label>
+          <label>Work email<input id="registration-email" type="email" required autocomplete="email"></label>
+          <label>Employee ID <small>(optional; HR will verify)</small><input id="registration-employee" placeholder="Leave empty if you don't have one"></label>
+          <label>Password<input id="registration-password" type="password" minlength="8" required autocomplete="new-password"></label>
+          <div class="login-error" id="registration-message" role="status"></div>
+          <button class="button primary login-submit" type="submit">Submit for HR approval</button>
+          <button class="text-button" id="show-login" type="button">Back to sign in</button>
+        </form>
         <div class="demo-divider"><span>Demo accounts</span></div>
         <div class="demo-accounts">
           <button data-demo-email="hr@careerquest.demo"><span class="demo-role hr">HR</span><span><strong>HR workspace</strong><small>All employees and analytics</small></span></button>

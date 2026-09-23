@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"careerquest/internal/domain"
+	"careerquest/internal/repository"
 )
 
 const dateLayout = "2006-01-02"
@@ -383,6 +385,34 @@ func (s *Store) Employees() []domain.Employee {
 	return result
 }
 
+func (s *Store) SearchEmployees(filter repository.EmployeeSearch) ([]domain.Employee, error) {
+	query := strings.ToLower(strings.TrimSpace(filter.Query))
+	result := make([]domain.Employee, 0)
+	for _, employee := range s.Employees() {
+		searchable := strings.ToLower(strings.Join([]string{
+			employee.ID, employee.FullName, employee.Email, employee.Department,
+			employee.Team, employee.Role, employee.Grade,
+		}, " "))
+		if query != "" && !strings.Contains(searchable, query) {
+			continue
+		}
+		if filter.Department != "" && employee.Department != filter.Department {
+			continue
+		}
+		if filter.Team != "" && employee.Team != filter.Team {
+			continue
+		}
+		if filter.Role != "" && employee.Role != filter.Role {
+			continue
+		}
+		if filter.Grade != "" && employee.Grade != filter.Grade {
+			continue
+		}
+		result = append(result, employee)
+	}
+	return result, nil
+}
+
 func (s *Store) UpdateCareerGoal(id string, goal *domain.CareerGoal) (domain.Employee, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -419,6 +449,27 @@ func (s *Store) Events() []domain.Event {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func (s *Store) SearchEvents(filter repository.EventSearch) ([]domain.Event, error) {
+	query := strings.ToLower(strings.TrimSpace(filter.Query))
+	result := make([]domain.Event, 0)
+	for _, event := range s.Events() {
+		searchText := event.ID + " " + event.Title + " " + event.Description + " " + strings.Join(event.TargetRoles, " ") + " " + strings.Join(event.TargetGrades, " ")
+		for _, effect := range event.DevelopsSkills {
+			if skill, ok := s.Skill(effect.SkillID); ok {
+				searchText += " " + skill.Name
+			}
+		}
+		if query != "" && !strings.Contains(strings.ToLower(searchText), query) {
+			continue
+		}
+		if filter.Type != "" && event.Type != filter.Type || filter.Role != "" && !slices.Contains(event.TargetRoles, filter.Role) || filter.Grade != "" && !slices.Contains(event.TargetGrades, filter.Grade) {
+			continue
+		}
+		result = append(result, event)
+	}
+	return result, nil
 }
 
 func (s *Store) CreateEvent(event domain.Event) (domain.Event, error) {
